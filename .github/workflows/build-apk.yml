@@ -59,7 +59,7 @@ jobs:
         run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.version.outputs.apk }}"
 
       - name: Verify APK signature
-        run: apksigner verify --verbose "${{ steps.version.outputs.apk }}"
+        run: "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "${{ steps.version.outputs.apk }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
