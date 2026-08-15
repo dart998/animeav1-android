@@ -8,10 +8,12 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
+import android.webkit.JsResult;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -25,16 +27,21 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private ProgressBar progressBar;
+    private View rootContainer;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        enableImmersiveNavigation();
 
+        rootContainer = findViewById(R.id.rootContainer);
         webView = findViewById(R.id.webView);
         progressBar = findViewById(R.id.progressBar);
+
+        applySystemBarInsets();
+        enableImmersiveNavigation();
+        AdBlocker.initialize(getApplicationContext());
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -58,6 +65,16 @@ public class MainActivity extends Activity {
             public void onProgressChanged(WebView view, int newProgress) {
                 progressBar.setProgress(newProgress);
                 progressBar.setVisibility(newProgress < 100 ? View.VISIBLE : View.GONE);
+            }
+
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
+                return false;
+            }
+
+            @Override
+            public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
+                return super.onJsAlert(view, url, message, result);
             }
         });
 
@@ -110,6 +127,17 @@ public class MainActivity extends Activity {
             webView.loadUrl(HOME_URL);
         } else {
             webView.restoreState(savedInstanceState);
+        }
+    }
+
+    private void applySystemBarInsets() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            rootContainer.setOnApplyWindowInsetsListener((v, insets) -> {
+                android.graphics.Insets statusInsets = insets.getInsets(WindowInsets.Type.statusBars());
+                v.setPadding(0, statusInsets.top, 0, 0);
+                return insets;
+            });
+            rootContainer.requestApplyInsets();
         }
     }
 
