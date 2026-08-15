@@ -3,7 +3,8 @@ name: Build and Release Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -59,7 +60,9 @@ jobs:
         run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.version.outputs.apk }}"
 
       - name: Verify APK signature
-        run: "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "${{ steps.version.outputs.apk }}"
+        shell: bash
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "${{ steps.version.outputs.apk }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
