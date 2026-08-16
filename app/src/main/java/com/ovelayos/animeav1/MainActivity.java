@@ -24,6 +24,8 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
 public class MainActivity extends Activity {
     private static final String HOME_URL = "https://animeav1.com/";
     private static final int DARK_FALLBACK = Color.rgb(16, 15, 20);
@@ -31,6 +33,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ProgressBar progressBar;
     private View rootContainer;
+    private SwipeRefreshLayout swipeRefresh;
     private FrameLayout fullscreenContainer;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
@@ -42,9 +45,16 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         rootContainer = findViewById(R.id.rootContainer);
+        swipeRefresh = findViewById(R.id.swipeRefresh);
         webView = findViewById(R.id.webView);
         progressBar = findViewById(R.id.progressBar);
         fullscreenContainer = findViewById(R.id.fullscreenContainer);
+
+        swipeRefresh.setOnRefreshListener(() -> {
+            if (customView == null) webView.reload();
+            else swipeRefresh.setRefreshing(false);
+        });
+        swipeRefresh.setOnChildScrollUpCallback((parent, child) -> webView.canScrollVertically(-1));
 
         applySystemBarInsets();
         setStatusBarAppearance(DARK_FALLBACK, false);
@@ -84,7 +94,9 @@ public class MainActivity extends Activity {
 
                 customView = view;
                 customViewCallback = callback;
-                webView.setVisibility(View.GONE);
+                swipeRefresh.setRefreshing(false);
+                swipeRefresh.setEnabled(false);
+                swipeRefresh.setVisibility(View.GONE);
                 progressBar.setVisibility(View.GONE);
                 rootContainer.setPadding(0, 0, 0, 0);
                 fullscreenContainer.setVisibility(View.VISIBLE);
@@ -129,6 +141,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                swipeRefresh.setRefreshing(false);
                 CookieManager.getInstance().flush();
                 view.evaluateJavascript(AdBlocker.cosmeticCleanupScript(), null);
                 syncStatusBarWithWebTheme();
@@ -156,7 +169,8 @@ public class MainActivity extends Activity {
         fullscreenContainer.removeView(customView);
         fullscreenContainer.setVisibility(View.GONE);
         customView = null;
-        webView.setVisibility(View.VISIBLE);
+        swipeRefresh.setVisibility(View.VISIBLE);
+        swipeRefresh.setEnabled(true);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         applySystemBarInsets();
         syncStatusBarWithWebTheme();
