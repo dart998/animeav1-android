@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JsResult;
 import android.webkit.WebChromeClient;
@@ -94,6 +95,7 @@ public class MainActivity extends Activity {
 
                 customView = view;
                 customViewCallback = callback;
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 swipeRefresh.setRefreshing(false);
                 swipeRefresh.setEnabled(false);
                 swipeRefresh.setVisibility(View.GONE);
@@ -109,37 +111,15 @@ public class MainActivity extends Activity {
                 hideAllSystemBarsForVideo();
             }
 
-            @Override
-            public void onHideCustomView() {
-                exitVideoFullscreen();
-            }
-
-            @Override
-            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
-                return false;
-            }
-
-            @Override
-            public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
-                return super.onJsAlert(view, url, message, result);
-            }
+            @Override public void onHideCustomView() { exitVideoFullscreen(); }
+            @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) { return false; }
+            @Override public boolean onJsAlert(WebView view, String url, String message, JsResult result) { return super.onJsAlert(view, url, message, result); }
         });
 
         webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public void onPageStarted(WebView view, String url, Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-                progressBar.setVisibility(View.VISIBLE);
-            }
-
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                if (AdBlocker.shouldBlock(request.getUrl())) return AdBlocker.emptyResponse();
-                return super.shouldInterceptRequest(view, request);
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
+            @Override public void onPageStarted(WebView view, String url, Bitmap favicon) { super.onPageStarted(view, url, favicon); progressBar.setVisibility(View.VISIBLE); }
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) { if (AdBlocker.shouldBlock(request.getUrl())) return AdBlocker.emptyResponse(); return super.shouldInterceptRequest(view, request); }
+            @Override public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 swipeRefresh.setRefreshing(false);
                 CookieManager.getInstance().flush();
@@ -147,11 +127,8 @@ public class MainActivity extends Activity {
                 syncStatusBarWithWebTheme();
                 enableImmersiveNavigation();
             }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
-                String scheme = uri.getScheme();
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl(); String scheme = uri.getScheme();
                 if (AdBlocker.shouldBlock(uri)) return true;
                 if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (Exception ignored) {}
@@ -159,13 +136,12 @@ public class MainActivity extends Activity {
             }
         });
 
-        if (savedInstanceState == null) webView.loadUrl(HOME_URL);
-        else webView.restoreState(savedInstanceState);
+        if (savedInstanceState == null) webView.loadUrl(HOME_URL); else webView.restoreState(savedInstanceState);
     }
 
     private void exitVideoFullscreen() {
         if (customView == null) return;
-
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         fullscreenContainer.removeView(customView);
         fullscreenContainer.setVisibility(View.GONE);
         customView = null;
@@ -175,11 +151,7 @@ public class MainActivity extends Activity {
         applySystemBarInsets();
         syncStatusBarWithWebTheme();
         enableImmersiveNavigation();
-
-        if (customViewCallback != null) {
-            customViewCallback.onCustomViewHidden();
-            customViewCallback = null;
-        }
+        if (customViewCallback != null) { customViewCallback.onCustomViewHidden(); customViewCallback = null; }
     }
 
     private void hideAllSystemBarsForVideo() {
@@ -191,67 +163,38 @@ public class MainActivity extends Activity {
                 controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
         } else {
-            window.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_FULLSCREEN |
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            );
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         }
     }
 
     private void syncStatusBarWithWebTheme() {
         if (customView != null) return;
         String js = "(function(){var e=document.elementFromPoint(2,2)||document.body||document.documentElement;var c='';while(e){c=getComputedStyle(e).backgroundColor;if(c&&c!=='rgba(0, 0, 0, 0)'&&c!=='transparent')break;e=e.parentElement;}if(!c)c=getComputedStyle(document.body).backgroundColor;return c;})()";
-        webView.evaluateJavascript(js, value -> {
-            if (value == null) return;
-            int color = parseCssColor(value.replace("\"", ""));
-            setStatusBarAppearance(color, luminance(color) > 0.55);
-        });
+        webView.evaluateJavascript(js, value -> { if (value != null) { int color = parseCssColor(value.replace("\"", "")); setStatusBarAppearance(color, luminance(color) > 0.55); } });
     }
 
     private int parseCssColor(String css) {
         try {
-            if (css.startsWith("rgb")) {
-                int a = css.indexOf('('), b = css.indexOf(')');
-                String[] p = css.substring(a + 1, b).split(",");
-                return Color.rgb(Integer.parseInt(p[0].trim()), Integer.parseInt(p[1].trim()), Integer.parseInt(p[2].trim()));
-            }
+            if (css.startsWith("rgb")) { int a = css.indexOf('('), b = css.indexOf(')'); String[] p = css.substring(a + 1, b).split(","); return Color.rgb(Integer.parseInt(p[0].trim()), Integer.parseInt(p[1].trim()), Integer.parseInt(p[2].trim())); }
             return Color.parseColor(css);
         } catch (Exception e) { return DARK_FALLBACK; }
     }
 
-    private double luminance(int color) {
-        return (0.2126 * Color.red(color) + 0.7152 * Color.green(color) + 0.0722 * Color.blue(color)) / 255.0;
-    }
+    private double luminance(int color) { return (0.2126 * Color.red(color) + 0.7152 * Color.green(color) + 0.0722 * Color.blue(color)) / 255.0; }
 
     private void setStatusBarAppearance(int color, boolean lightBackground) {
-        Window window = getWindow();
-        window.setStatusBarColor(color);
-        rootContainer.setBackgroundColor(color);
+        Window window = getWindow(); window.setStatusBarColor(color); rootContainer.setBackgroundColor(color);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WindowInsetsController controller = window.getInsetsController();
             if (controller != null) controller.setSystemBarsAppearance(lightBackground ? WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS : 0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            int flags = window.getDecorView().getSystemUiVisibility();
-            if (lightBackground) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR; else flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            window.getDecorView().setSystemUiVisibility(flags);
+            int flags = window.getDecorView().getSystemUiVisibility(); if (lightBackground) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR; else flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR; window.getDecorView().setSystemUiVisibility(flags);
         }
     }
 
     private void applySystemBarInsets() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            rootContainer.setOnApplyWindowInsetsListener((v, insets) -> {
-                if (customView == null) {
-                    android.graphics.Insets statusInsets = insets.getInsets(WindowInsets.Type.statusBars());
-                    v.setPadding(0, statusInsets.top, 0, 0);
-                } else {
-                    v.setPadding(0, 0, 0, 0);
-                }
-                return insets;
-            });
+            rootContainer.setOnApplyWindowInsetsListener((v, insets) -> { if (customView == null) { android.graphics.Insets statusInsets = insets.getInsets(WindowInsets.Type.statusBars()); v.setPadding(0, statusInsets.top, 0, 0); } else v.setPadding(0, 0, 0, 0); return insets; });
             rootContainer.requestApplyInsets();
         }
     }
@@ -261,26 +204,14 @@ public class MainActivity extends Activity {
         Window window = getWindow();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WindowInsetsController controller = window.getInsetsController();
-            if (controller != null) {
-                controller.show(WindowInsets.Type.statusBars());
-                controller.hide(WindowInsets.Type.navigationBars());
-                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
-        } else {
-            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-        }
+            if (controller != null) { controller.show(WindowInsets.Type.statusBars()); controller.hide(WindowInsets.Type.navigationBars()); controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); }
+        } else window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
     }
 
     @Override public void onWindowFocusChanged(boolean hasFocus) { super.onWindowFocusChanged(hasFocus); if (hasFocus) enableImmersiveNavigation(); }
     @Override protected void onSaveInstanceState(Bundle outState) { webView.saveState(outState); super.onSaveInstanceState(outState); }
     @Override protected void onPause() { CookieManager.getInstance().flush(); webView.onPause(); super.onPause(); }
     @Override protected void onResume() { super.onResume(); webView.onResume(); enableImmersiveNavigation(); if (customView == null) webView.postDelayed(this::syncStatusBarWithWebTheme, 250); }
-    @Override protected void onDestroy() { CookieManager.getInstance().flush(); webView.destroy(); super.onDestroy(); }
-
-    @Override
-    public void onBackPressed() {
-        if (customView != null) exitVideoFullscreen();
-        else if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
-    }
+    @Override protected void onDestroy() { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); CookieManager.getInstance().flush(); webView.destroy(); super.onDestroy(); }
+    @Override public void onBackPressed() { if (customView != null) exitVideoFullscreen(); else if (webView.canGoBack()) webView.goBack(); else super.onBackPressed(); }
 }
