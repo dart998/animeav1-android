@@ -30,12 +30,10 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
@@ -48,20 +46,17 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://animeav1.com/";
     private static final int DARK_FALLBACK = Color.rgb(16, 15, 20);
     private static final int REQ_NOTIFICATIONS = 41;
-    private static final String PREFS = "animeav1_app";
-    private static final String PREF_SITE_MENU = "site_menu_json";
 
     private WebView webView;
     private ProgressBar progressBar;
     private View rootContainer;
-    private View bottomBar;
-    private Button downloadButton;
     private FrameLayout fullscreenContainer;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
     private EpisodeStore store;
     private EpisodeRef currentEpisode;
     private boolean pendingDownloadAfterPermission;
+    private String pendingDownloadSource = "";
     private float pullStartY;
     private boolean pullStartedAtTop;
 
@@ -73,9 +68,12 @@ public class MainActivity extends Activity {
             String status = intent.getStringExtra(DownloadService.EXTRA_STATUS);
             String error = intent.getStringExtra(DownloadService.EXTRA_ERROR);
 
-            if (currentEpisode != null && currentEpisode.slug.equals(slug) && currentEpisode.episode == episode) {
-                updateDownloadButton();
-                if (EpisodeStore.STATUS_COMPLETED.equals(status)) injectOfflinePlayerIfAvailable();
+            EpisodeRef fromUrl = parseEpisode(webView.getUrl());
+            if (fromUrl != null) currentEpisode = fromUrl;
+            updateSiteDownloadButton();
+            if (currentEpisode != null && currentEpisode.slug.equals(slug) && currentEpisode.episode == episode
+                    && EpisodeStore.STATUS_COMPLETED.equals(status)) {
+                injectOfflinePlayerIfAvailable();
             }
             if (EpisodeStore.STATUS_COMPLETED.equals(status)) {
                 Toast.makeText(MainActivity.this, "Episodio disponible offline", Toast.LENGTH_SHORT).show();
@@ -94,14 +92,11 @@ public class MainActivity extends Activity {
         rootContainer = findViewById(R.id.rootContainer);
         webView = findViewById(R.id.webView);
         progressBar = findViewById(R.id.progressBar);
-        bottomBar = findViewById(R.id.bottomBar);
-        downloadButton = findViewById(R.id.downloadButton);
         fullscreenContainer = findViewById(R.id.fullscreenContainer);
 
         store = new EpisodeStore(this);
         store.markInterruptedDownloads();
         registerDownloadReceiver();
-        setupBottomBar();
         setupPullToRefresh();
 
         applySystemBarInsets();
@@ -143,7 +138,6 @@ public class MainActivity extends Activity {
                 customViewCallback = callback;
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 webView.setVisibility(View.GONE);
-                bottomBar.setVisibility(View.GONE);
                 progressBar.setVisibility(View.GONE);
                 rootContainer.setPadding(0, 0, 0, 0);
                 fullscreenContainer.setVisibility(View.VISIBLE);
@@ -165,7 +159,6 @@ public class MainActivity extends Activity {
                 super.onPageStarted(view, url, favicon);
                 progressBar.setVisibility(View.VISIBLE);
                 currentEpisode = parseEpisode(url);
-                updateDownloadButton();
             }
 
             @Override
@@ -186,9 +179,9 @@ public class MainActivity extends Activity {
                     currentEpisode.title = friendlyPageTitle(view.getTitle(), currentEpisode.slug);
                     resolveH1Title();
                 }
-                updateDownloadButton();
+                injectSiteControls();
+                updateSiteDownloadButton();
                 injectOfflinePlayerIfAvailable();
-                cacheSiteMenu();
                 syncStatusBarWithWebTheme();
                 enableImmersiveNavigation();
             }
@@ -197,6 +190,10 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 String scheme = uri.getScheme();
+                if ("animeav1".equalsIgnoreCase(scheme)) {
+                    handleAppUri(uri);
+                    return true;
+                }
                 if (AdBlocker.shouldBlock(uri)) return true;
                 if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (Exception ignored) {}
@@ -208,12 +205,28 @@ public class MainActivity extends Activity {
         else webView.restoreState(savedInstanceState);
     }
 
-    private void setupBottomBar() {
-        findViewById(R.id.homeButton).setOnClickListener(v -> webView.loadUrl(HOME_URL));
-        findViewById(R.id.menuButton).setOnClickListener(v -> showSiteMenu());
-        downloadButton.setOnClickListener(v -> requestDownload());
-        findViewById(R.id.offlineButton).setOnClickListener(v -> showOfflineLibrary());
-        updateDownloadButton();
+    private void handleAppUri(Uri uri) {
+        String host = uri.getHost() == null ? "" : uri.getHost();
+        if ("downloads".equalsIgnoreCase(host)) {
+            showOfflineLibrary();
+            return;
+        }
+        if (!"download".equalsIgnoreCase(host)) return;
+
+        String slug = value(uri.getQueryParameter("slug"));
+        int episode = 0;
+        try { episode = Integer.parseInt(value(uri.getQueryParameter("episode"))); } catch (Exception ignored) {}
+        String page = value(uri.getQueryParameter("page"));
+        String title = value(uri.getQueryParameter("title"));
+        String source = value(uri.getQueryParameter("source"));
+        if (!slug.isEmpty() && episode > 0 && !page.isEmpty()) {
+            currentEpisode = new EpisodeRef(slug, episode, page);
+            currentEpisode.title = title.isEmpty() ? slug : title;
+        } else {
+            EpisodeRef fromUrl = parseEpisode(webView.getUrl());
+            if (fromUrl != null) currentEpisode = fromUrl;
+        }
+        requestDownload(source);
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -265,38 +278,43 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void updateDownloadButton() {
-        if (downloadButton == null) return;
-        if (currentEpisode == null) {
-            downloadButton.setEnabled(false);
-            downloadButton.setText("Descargar");
-            return;
-        }
-
-        downloadButton.setEnabled(true);
-        EpisodeStore.DownloadRecord r = store.get(currentEpisode.slug, currentEpisode.episode);
-        if (r == null) {
-            downloadButton.setText("Descargar");
-            return;
-        }
-        if (EpisodeStore.STATUS_COMPLETED.equals(r.status)) {
-            if (!r.path.isEmpty() && new File(r.path).isFile()) downloadButton.setText("✓ Offline");
-            else {
-                store.delete(r.slug, r.episode);
-                downloadButton.setText("Descargar");
-            }
-        } else if (EpisodeStore.STATUS_DOWNLOADING.equals(r.status) || EpisodeStore.STATUS_RESOLVING.equals(r.status)) {
-            if (r.totalBytes > 0) {
-                int pct = (int) Math.min(100, r.bytes * 100L / r.totalBytes);
-                downloadButton.setText("↓ " + pct + "%");
-            } else downloadButton.setText("Descargando…");
-        } else if (EpisodeStore.STATUS_ERROR.equals(r.status)) {
-            downloadButton.setText("Reintentar");
-        } else downloadButton.setText("Descargar");
+    private void injectSiteControls() {
+        String url = webView.getUrl();
+        if (url == null || !url.contains("animeav1.com")) return;
+        webView.evaluateJavascript(SiteIntegration.install(downloadLabelForCurrent()), null);
     }
 
-    private void requestDownload() {
-        if (currentEpisode == null) return;
+    private void updateSiteDownloadButton() {
+        String url = webView.getUrl();
+        if (url == null || !url.contains("animeav1.com")) return;
+        webView.evaluateJavascript(SiteIntegration.updateDownloadLabel(downloadLabelForCurrent()), null);
+    }
+
+    private String downloadLabelForCurrent() {
+        if (currentEpisode == null) return "Descargar";
+        EpisodeStore.DownloadRecord r = store.get(currentEpisode.slug, currentEpisode.episode);
+        if (r == null) return "Descargar";
+        if (EpisodeStore.STATUS_COMPLETED.equals(r.status)) {
+            if (!r.path.isEmpty() && new File(r.path).isFile()) return "✓ Offline";
+            store.delete(r.slug, r.episode);
+            return "Descargar";
+        }
+        if (EpisodeStore.STATUS_DOWNLOADING.equals(r.status) || EpisodeStore.STATUS_RESOLVING.equals(r.status)) {
+            if (r.totalBytes > 0) {
+                int pct = (int) Math.min(100, r.bytes * 100L / r.totalBytes);
+                return "↓ " + pct + "%";
+            }
+            return "Descargando…";
+        }
+        if (EpisodeStore.STATUS_ERROR.equals(r.status)) return "Reintentar";
+        return "Descargar";
+    }
+
+    private void requestDownload(String sourceUrl) {
+        if (currentEpisode == null) {
+            Toast.makeText(this, "No se ha podido identificar el episodio", Toast.LENGTH_LONG).show();
+            return;
+        }
         EpisodeStore.DownloadRecord existing = store.get(currentEpisode.slug, currentEpisode.episode);
         if (existing != null && EpisodeStore.STATUS_COMPLETED.equals(existing.status)
                 && !existing.path.isEmpty() && new File(existing.path).isFile()) {
@@ -307,26 +325,29 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Ya hay una descarga en curso", Toast.LENGTH_LONG).show();
             return;
         }
+        pendingDownloadSource = value(sourceUrl);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             pendingDownloadAfterPermission = true;
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
             return;
         }
-        startEpisodeDownload();
+        startEpisodeDownload(pendingDownloadSource);
+        pendingDownloadSource = "";
     }
 
-    private void startEpisodeDownload() {
+    private void startEpisodeDownload(String sourceUrl) {
         if (currentEpisode == null) return;
         Intent i = new Intent(this, DownloadService.class);
         i.putExtra(DownloadService.EXTRA_SLUG, currentEpisode.slug);
         i.putExtra(DownloadService.EXTRA_EPISODE, currentEpisode.episode);
         i.putExtra(DownloadService.EXTRA_PAGE_URL, currentEpisode.pageUrl);
         i.putExtra(DownloadService.EXTRA_TITLE, currentEpisode.title);
+        i.putExtra(DownloadService.EXTRA_SOURCE_URL, value(sourceUrl));
         String cookie = CookieManager.getInstance().getCookie(currentEpisode.pageUrl);
         i.putExtra(DownloadService.EXTRA_COOKIE, cookie == null ? "" : cookie);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
         else startService(i);
-        downloadButton.setText("Preparando…");
+        webView.evaluateJavascript(SiteIntegration.updateDownloadLabel("Preparando…"), null);
     }
 
     @Override
@@ -334,7 +355,8 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_NOTIFICATIONS && pendingDownloadAfterPermission) {
             pendingDownloadAfterPermission = false;
-            startEpisodeDownload();
+            startEpisodeDownload(pendingDownloadSource);
+            pendingDownloadSource = "";
         }
     }
 
@@ -398,7 +420,7 @@ public class MainActivity extends Activity {
                     if (!r.path.isEmpty()) new File(r.path).delete();
                     store.delete(r.slug, r.episode);
                     if (currentEpisode != null && currentEpisode.slug.equals(r.slug) && currentEpisode.episode == r.episode) webView.reload();
-                    updateDownloadButton();
+                    updateSiteDownloadButton();
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -411,49 +433,6 @@ public class MainActivity extends Activity {
                 "<style>html,body{margin:0;background:#100f14;color:#eee;font-family:sans-serif}main{padding:16px}video{width:100%;background:#000;aspect-ratio:16/9;object-fit:contain}h2{font-size:18px;margin:12px 0 4px}p{opacity:.7;margin-top:4px}</style></head>" +
                 "<body><main><video controls autoplay playsinline src='" + src + "'></video><h2>" + title + "</h2><p>Episodio " + r.episode + " · reproducción offline</p></main></body></html>";
         webView.loadDataWithBaseURL("https://offline.animeav1.local/library/", html, "text/html", "UTF-8", null);
-    }
-
-    private void cacheSiteMenu() {
-        if (webView.getUrl() == null || !webView.getUrl().contains("animeav1.com")) return;
-        String js = "(function(){var wanted=['Inicio','Catálogo','Horario','Mis Listas','Mi cuenta'],links=[].slice.call(document.querySelectorAll('a[href]')),out=[];" +
-                "wanted.forEach(function(w){var k=w.toLowerCase(),a=links.find(function(x){return (x.textContent||'').trim().toLowerCase()===k;});" +
-                "if(a&&/^https?:/.test(a.href))out.push({label:w,url:a.href});});return JSON.stringify(out);})()";
-        webView.evaluateJavascript(js, value -> {
-            try {
-                Object decoded = new JSONTokener(value).nextValue();
-                if (decoded instanceof String) {
-                    String json = (String) decoded;
-                    if (new JSONArray(json).length() > 0) getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_SITE_MENU, json).apply();
-                }
-            } catch (Exception ignored) {}
-        });
-    }
-
-    private void showSiteMenu() {
-        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_SITE_MENU, "");
-        try {
-            JSONArray arr = new JSONArray(raw);
-            if (arr.length() > 0) {
-                String[] labels = new String[arr.length()];
-                String[] urls = new String[arr.length()];
-                for (int i = 0; i < arr.length(); i++) {
-                    JSONObject o = arr.getJSONObject(i);
-                    labels[i] = o.optString("label", "Menú");
-                    urls[i] = o.optString("url", HOME_URL);
-                }
-                new AlertDialog.Builder(this).setTitle("AnimeAV1").setItems(labels, (d, which) -> webView.loadUrl(urls[which])).setNegativeButton("Cerrar", null).show();
-                return;
-            }
-        } catch (Exception ignored) {}
-
-        new AlertDialog.Builder(this)
-                .setTitle("AnimeAV1")
-                .setItems(new String[]{"Inicio", "Ir al menú original"}, (d, which) -> {
-                    if (which == 0) webView.loadUrl(HOME_URL);
-                    else webView.evaluateJavascript("window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})", null);
-                })
-                .setNegativeButton("Cerrar", null)
-                .show();
     }
 
     private void registerDownloadReceiver() {
@@ -469,9 +448,9 @@ public class MainActivity extends Activity {
         fullscreenContainer.setVisibility(View.GONE);
         customView = null;
         webView.setVisibility(View.VISIBLE);
-        bottomBar.setVisibility(View.VISIBLE);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         applySystemBarInsets();
+        injectSiteControls();
         syncStatusBarWithWebTheme();
         enableImmersiveNavigation();
         if (customViewCallback != null) { customViewCallback.onCustomViewHidden(); customViewCallback = null; }
@@ -579,10 +558,12 @@ public class MainActivity extends Activity {
         return bytes + " B";
     }
 
+    private static String value(String s) { return s == null ? "" : s; }
+
     @Override public void onWindowFocusChanged(boolean hasFocus) { super.onWindowFocusChanged(hasFocus); if (hasFocus) enableImmersiveNavigation(); }
     @Override protected void onSaveInstanceState(Bundle outState) { webView.saveState(outState); super.onSaveInstanceState(outState); }
     @Override protected void onPause() { CookieManager.getInstance().flush(); webView.onPause(); super.onPause(); }
-    @Override protected void onResume() { super.onResume(); webView.onResume(); enableImmersiveNavigation(); updateDownloadButton(); if (customView == null) webView.postDelayed(this::syncStatusBarWithWebTheme, 250); }
+    @Override protected void onResume() { super.onResume(); webView.onResume(); enableImmersiveNavigation(); injectSiteControls(); updateSiteDownloadButton(); if (customView == null) webView.postDelayed(this::syncStatusBarWithWebTheme, 250); }
 
     @Override
     protected void onDestroy() {
