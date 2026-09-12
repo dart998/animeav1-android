@@ -5,80 +5,10 @@
     android:layout_height="match_parent"
     android:background="#100F14">
 
-    <LinearLayout
+    <WebView
+        android:id="@+id/webView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
-
-        <WebView
-            android:id="@+id/webView"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <LinearLayout
-            android:id="@+id/bottomBar"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:background="#17161C"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp">
-
-            <Button
-                android:id="@+id/homeButton"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:minHeight="0dp"
-                android:minWidth="0dp"
-                android:text="Inicio"
-                android:textAllCaps="false"
-                android:textColor="#F1F1F3"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/menuButton"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:minHeight="0dp"
-                android:minWidth="0dp"
-                android:text="Menú"
-                android:textAllCaps="false"
-                android:textColor="#F1F1F3"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/downloadButton"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1.35"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:minHeight="0dp"
-                android:minWidth="0dp"
-                android:text="Descargar"
-                android:textAllCaps="false"
-                android:textColor="#3BE5D0"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/offlineButton"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:minHeight="0dp"
-                android:minWidth="0dp"
-                android:text="Offline"
-                android:textAllCaps="false"
-                android:textColor="#F1F1F3"
-                android:textSize="12sp" />
-        </LinearLayout>
-    </LinearLayout>
+        android:layout_height="match_parent" />
 
     <ProgressBar
         android:id="@+id/progressBar"
