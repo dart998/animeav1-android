@@ -19,11 +19,12 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -44,6 +45,7 @@ public class DownloadService extends Service {
     public static final String EXTRA_PAGE_URL = "page_url";
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_COOKIE = "cookie";
+    public static final String EXTRA_SOURCE_URL = "source_url";
     public static final String EXTRA_STATUS = "status";
     public static final String EXTRA_BYTES = "bytes";
     public static final String EXTRA_TOTAL = "total";
@@ -53,8 +55,11 @@ public class DownloadService extends Service {
     private static final int FOREGROUND_ID = 1101;
     private static final int FINAL_ID = 1102;
 
-    private static final Pattern MEGA_RE = Pattern.compile(
+    private static final Pattern MEGA_PROVIDER_RE = Pattern.compile(
             "[\\\"']?server[\\\"']?\\s*:\\s*[\\\"']Mega[\\\"']\\s*,\\s*[\\\"']?url[\\\"']?\\s*:\\s*[\\\"']([^\\\"']+)[\\\"']",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern MEGA_ANY_RE = Pattern.compile(
+            "https?://(?:www\\.)?mega\\.(?:nz|co\\.nz)/[^\\s\\\"'<>]+",
             Pattern.CASE_INSENSITIVE);
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -85,11 +90,8 @@ public class DownloadService extends Service {
         executor.execute(() -> {
             Result result = performDownload(intent);
             busy.set(false);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE);
-            } else {
-                stopForeground(true);
-            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
+            else stopForeground(true);
             postFinalNotification(result);
             stopSelf(startId);
         });
@@ -102,6 +104,7 @@ public class DownloadService extends Service {
         String pageUrl = value(intent.getStringExtra(EXTRA_PAGE_URL));
         String title = value(intent.getStringExtra(EXTRA_TITLE));
         String cookie = value(intent.getStringExtra(EXTRA_COOKIE));
+        String sourceHint = value(intent.getStringExtra(EXTRA_SOURCE_URL));
 
         EpisodeStore store = new EpisodeStore(this);
         EpisodeStore.DownloadRecord record = new EpisodeStore.DownloadRecord();
@@ -119,17 +122,22 @@ public class DownloadService extends Service {
                 throw new IllegalArgumentException("Episodio no válido");
             }
 
-            String html = fetchEpisodeHtml(pageUrl, cookie);
-            String megaUrl = findMegaUrl(html);
-            if (megaUrl.isEmpty()) throw new IllegalStateException("Este episodio no expone una fuente Mega descargable");
+            MegaLink mega = parseMegaLink(sourceHint);
+            if (mega == null) {
+                String html = fetchEpisodeHtml(pageUrl, cookie);
+                mega = findMegaLink(html);
+            }
+            if (mega == null) {
+                throw new IllegalStateException("No se ha podido resolver el enlace de descarga de Mega");
+            }
 
-            record.sourceUrl = megaUrl;
+            record.sourceUrl = mega.original;
             record.status = EpisodeStore.STATUS_DOWNLOADING;
             store.save(record);
             broadcastRecord(record);
 
             File finalFile = episodeFile(slug, episode);
-            downloadMega(megaUrl, finalFile, record, store);
+            downloadMega(mega, finalFile, record, store);
 
             record.path = finalFile.getAbsolutePath();
             record.bytes = finalFile.length();
@@ -167,49 +175,115 @@ public class DownloadService extends Service {
         }
     }
 
-    private String findMegaUrl(String html) {
-        Matcher m = MEGA_RE.matcher(html);
-        while (m.find()) {
-            String raw = decodeJsString(m.group(1));
-            if (raw.contains("mega.nz") || raw.contains("mega.co.nz")) return raw;
+    private MegaLink findMegaLink(String html) {
+        String decoded = decodeJsString(html);
+
+        Matcher provider = MEGA_PROVIDER_RE.matcher(decoded);
+        while (provider.find()) {
+            MegaLink link = parseMegaLink(provider.group(1));
+            if (link != null) return link;
         }
-        return "";
+
+        Matcher any = MEGA_ANY_RE.matcher(decoded);
+        while (any.find()) {
+            MegaLink link = parseMegaLink(any.group());
+            if (link != null) return link;
+        }
+        return null;
+    }
+
+    private MegaLink parseMegaLink(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return null;
+        String s = decodeJsString(raw).trim();
+        s = stripQuotes(s);
+
+        for (int i = 0; i < 2 && looksPercentEncoded(s); i++) {
+            try { s = URLDecoder.decode(s, StandardCharsets.UTF_8.name()); }
+            catch (Exception ignored) { break; }
+        }
+
+        Matcher embedded = MEGA_ANY_RE.matcher(s);
+        if (embedded.find()) s = embedded.group();
+        s = trimTrailingPunctuation(s);
+
+        try {
+            URI uri = new URI(s);
+            String host = value(uri.getHost()).toLowerCase(Locale.US);
+            if (!(host.equals("mega.nz") || host.endsWith(".mega.nz")
+                    || host.equals("mega.co.nz") || host.endsWith(".mega.co.nz"))) return null;
+
+            String fragment = value(uri.getRawFragment());
+            try { fragment = URLDecoder.decode(fragment, StandardCharsets.UTF_8.name()); }
+            catch (Exception ignored) {}
+
+            String handle = "";
+            String key = "";
+            String path = value(uri.getPath()).replaceAll("^/+|/+$", "");
+            String[] bits = path.isEmpty() ? new String[0] : path.split("/");
+
+            if (bits.length >= 2 && ("file".equalsIgnoreCase(bits[0]) || "embed".equalsIgnoreCase(bits[0]))) {
+                handle = bits[1];
+                key = fragment;
+            } else if (fragment.startsWith("!")) {
+                String[] old = fragment.substring(1).split("!");
+                if (old.length >= 2) {
+                    handle = old[0];
+                    key = old[1];
+                }
+            }
+
+            if (key.contains("/")) key = key.substring(0, key.indexOf('/'));
+            if (key.contains("?")) key = key.substring(0, key.indexOf('?'));
+            key = key.trim();
+            if (handle.isEmpty() || key.isEmpty()) return null;
+
+            byte[] test = Base64.decode(key, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+            if (test.length != 32) return null;
+            return new MegaLink(s, handle, key);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean looksPercentEncoded(String s) {
+        String x = s.toLowerCase(Locale.US);
+        return x.contains("%2f") || x.contains("%3a") || x.contains("%23") || x.contains("%21");
+    }
+
+    private String stripQuotes(String s) {
+        while (s.length() >= 2 && ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'")))) {
+            s = s.substring(1, s.length() - 1).trim();
+        }
+        return s;
+    }
+
+    private String trimTrailingPunctuation(String s) {
+        while (!s.isEmpty()) {
+            char c = s.charAt(s.length() - 1);
+            if (c == ')' || c == ']' || c == '}' || c == ',' || c == ';' || c == '.') s = s.substring(0, s.length() - 1);
+            else break;
+        }
+        return s;
     }
 
     private String decodeJsString(String raw) {
-        return raw
+        return value(raw)
                 .replace("\\/", "/")
                 .replace("\\u002F", "/")
                 .replace("\\u002f", "/")
                 .replace("\\u003A", ":")
                 .replace("\\u003a", ":")
                 .replace("\\u0023", "#")
+                .replace("\\u0021", "!")
                 .replace("\\u0026", "&")
-                .replace("&amp;", "&");
+                .replace("&amp;", "&")
+                .replace("&#35;", "#")
+                .replace("&#x23;", "#");
     }
 
-    private void downloadMega(String rawUrl, File finalFile,
+    private void downloadMega(MegaLink mega, File finalFile,
                               EpisodeStore.DownloadRecord record, EpisodeStore store) throws Exception {
-        URL parsed = new URL(rawUrl);
-        String path = parsed.getPath() == null ? "" : parsed.getPath();
-        String fragment = parsed.getRef() == null ? "" : parsed.getRef();
-        String handle = "";
-        String keyPart = "";
-
-        String[] pathBits = path.replaceAll("^/+|/+$", "").split("/");
-        if (pathBits.length >= 2 && "file".equalsIgnoreCase(pathBits[0])) {
-            handle = pathBits[1];
-            keyPart = fragment;
-        } else if (fragment.startsWith("!")) {
-            String[] oldBits = fragment.substring(1).split("!");
-            if (oldBits.length >= 2) {
-                handle = oldBits[0];
-                keyPart = oldBits[1];
-            }
-        }
-        if (handle.isEmpty() || keyPart.isEmpty()) throw new IllegalStateException("URL Mega inválida");
-
-        byte[] rawKey = Base64.decode(keyPart, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        byte[] rawKey = Base64.decode(mega.key, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         if (rawKey.length != 32) throw new IllegalStateException("Clave Mega inválida");
 
         byte[] aesKey = new byte[16];
@@ -217,7 +291,7 @@ public class DownloadService extends Service {
         byte[] iv = new byte[16];
         System.arraycopy(rawKey, 16, iv, 0, 8);
 
-        JSONObject meta = requestMegaDownload(handle);
+        JSONObject meta = requestMegaDownload(mega.handle);
         String downloadUrl = meta.optString("g", "");
         long expected = meta.optLong("s", 0);
         if (downloadUrl.isEmpty()) throw new IllegalStateException("Mega no devolvió una URL de descarga");
@@ -231,7 +305,7 @@ public class DownloadService extends Service {
         c.setConnectTimeout(25000);
         c.setReadTimeout(45000);
         c.setInstanceFollowRedirects(true);
-        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AnimeAV1/1.1");
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AnimeAV1/1.1.1");
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
@@ -424,6 +498,18 @@ public class DownloadService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    private static final class MegaLink {
+        final String original;
+        final String handle;
+        final String key;
+
+        MegaLink(String original, String handle, String key) {
+            this.original = original;
+            this.handle = handle;
+            this.key = key;
+        }
     }
 
     private static final class Result {
