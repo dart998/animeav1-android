@@ -26,7 +26,10 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,7 +66,11 @@ public class DownloadService extends Service {
             Pattern.CASE_INSENSITIVE);
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean busy = new AtomicBoolean(false);
+    private final AtomicBoolean workerRunning = new AtomicBoolean(false);
+    private final Object queueLock = new Object();
+    private final ArrayDeque<Intent> queue = new ArrayDeque<>();
+    private final Set<String> queuedKeys = new HashSet<>();
+    private int latestStartId;
 
     @Override
     public void onCreate() {
@@ -80,22 +87,93 @@ public class DownloadService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) return START_NOT_STICKY;
-        if (!busy.compareAndSet(false, true)) {
-            broadcast(intent.getStringExtra(EXTRA_SLUG), intent.getIntExtra(EXTRA_EPISODE, 0),
-                    EpisodeStore.STATUS_ERROR, 0, 0, "Ya hay otra descarga en curso");
+        latestStartId = Math.max(latestStartId, startId);
+        startForeground(FOREGROUND_ID, buildProgressNotification("Preparando cola de descargas…", 0, 0));
+
+        String key = taskKey(intent);
+        if (key.isEmpty()) {
+            broadcast(value(intent.getStringExtra(EXTRA_SLUG)), intent.getIntExtra(EXTRA_EPISODE, 0),
+                    EpisodeStore.STATUS_ERROR, 0, 0, "Episodio no válido");
             return START_NOT_STICKY;
         }
 
-        startForeground(FOREGROUND_ID, buildProgressNotification("Preparando descarga…", 0, 0));
-        executor.execute(() -> {
-            Result result = performDownload(intent);
-            busy.set(false);
+        if (alreadyAvailableOrQueued(intent)) return START_NOT_STICKY;
+
+        synchronized (queueLock) {
+            if (queuedKeys.contains(key)) return START_NOT_STICKY;
+            queue.addLast(new Intent(intent));
+            queuedKeys.add(key);
+        }
+        markPending(intent);
+
+        if (workerRunning.compareAndSet(false, true)) executor.execute(this::drainQueue);
+        return START_NOT_STICKY;
+    }
+
+    private boolean alreadyAvailableOrQueued(Intent intent) {
+        String slug = value(intent.getStringExtra(EXTRA_SLUG));
+        int episode = intent.getIntExtra(EXTRA_EPISODE, 0);
+        EpisodeStore store = new EpisodeStore(this);
+        try {
+            EpisodeStore.DownloadRecord r = store.get(slug, episode);
+            if (r == null) return false;
+            if (EpisodeStore.STATUS_COMPLETED.equals(r.status) && !r.path.isEmpty() && new File(r.path).isFile()) return true;
+            return EpisodeStore.STATUS_PENDING.equals(r.status)
+                    || EpisodeStore.STATUS_RESOLVING.equals(r.status)
+                    || EpisodeStore.STATUS_DOWNLOADING.equals(r.status);
+        } finally {
+            store.close();
+        }
+    }
+
+    private void markPending(Intent intent) {
+        EpisodeStore store = new EpisodeStore(this);
+        try {
+            EpisodeStore.DownloadRecord r = new EpisodeStore.DownloadRecord();
+            r.slug = value(intent.getStringExtra(EXTRA_SLUG));
+            r.episode = intent.getIntExtra(EXTRA_EPISODE, 0);
+            r.pageUrl = value(intent.getStringExtra(EXTRA_PAGE_URL));
+            r.title = value(intent.getStringExtra(EXTRA_TITLE));
+            r.provider = "Mega";
+            r.sourceUrl = value(intent.getStringExtra(EXTRA_SOURCE_URL));
+            r.status = EpisodeStore.STATUS_PENDING;
+            r.error = "";
+            store.save(r);
+            broadcastRecord(r);
+        } finally {
+            store.close();
+        }
+    }
+
+    private void drainQueue() {
+        for (;;) {
+            Intent task;
+            synchronized (queueLock) {
+                task = queue.pollFirst();
+                if (task == null) {
+                    workerRunning.set(false);
+                    break;
+                }
+            }
+
+            Result result = performDownload(task);
+            postFinalNotification(result);
+            synchronized (queueLock) {
+                queuedKeys.remove(taskKey(task));
+            }
+        }
+
+        boolean stillIdle;
+        synchronized (queueLock) {
+            stillIdle = queue.isEmpty() && !workerRunning.get();
+        }
+        if (stillIdle) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
             else stopForeground(true);
-            postFinalNotification(result);
-            stopSelf(startId);
-        });
-        return START_NOT_STICKY;
+            stopSelfResult(latestStartId);
+        } else if (workerRunning.compareAndSet(false, true)) {
+            executor.execute(this::drainQueue);
+        }
     }
 
     private Result performDownload(Intent intent) {
@@ -118,18 +196,14 @@ public class DownloadService extends Service {
         broadcastRecord(record);
 
         try {
-            if (slug.isEmpty() || episode <= 0 || pageUrl.isEmpty()) {
-                throw new IllegalArgumentException("Episodio no válido");
-            }
+            if (slug.isEmpty() || episode <= 0 || pageUrl.isEmpty()) throw new IllegalArgumentException("Episodio no válido");
 
             MegaLink mega = parseMegaLink(sourceHint);
             if (mega == null) {
                 String html = fetchEpisodeHtml(pageUrl, cookie);
                 mega = findMegaLink(html);
             }
-            if (mega == null) {
-                throw new IllegalStateException("No se ha podido resolver el enlace de descarga de Mega");
-            }
+            if (mega == null) throw new IllegalStateException("No se ha podido resolver el enlace de descarga de Mega");
 
             record.sourceUrl = mega.original;
             record.status = EpisodeStore.STATUS_DOWNLOADING;
@@ -177,13 +251,11 @@ public class DownloadService extends Service {
 
     private MegaLink findMegaLink(String html) {
         String decoded = decodeJsString(html);
-
         Matcher provider = MEGA_PROVIDER_RE.matcher(decoded);
         while (provider.find()) {
             MegaLink link = parseMegaLink(provider.group(1));
             if (link != null) return link;
         }
-
         Matcher any = MEGA_ANY_RE.matcher(decoded);
         while (any.find()) {
             MegaLink link = parseMegaLink(any.group());
@@ -194,14 +266,11 @@ public class DownloadService extends Service {
 
     private MegaLink parseMegaLink(String raw) {
         if (raw == null || raw.trim().isEmpty()) return null;
-        String s = decodeJsString(raw).trim();
-        s = stripQuotes(s);
-
+        String s = stripQuotes(decodeJsString(raw).trim());
         for (int i = 0; i < 2 && looksPercentEncoded(s); i++) {
             try { s = URLDecoder.decode(s, StandardCharsets.UTF_8.name()); }
             catch (Exception ignored) { break; }
         }
-
         Matcher embedded = MEGA_ANY_RE.matcher(s);
         if (embedded.find()) s = embedded.group();
         s = trimTrailingPunctuation(s);
@@ -213,30 +282,24 @@ public class DownloadService extends Service {
                     || host.equals("mega.co.nz") || host.endsWith(".mega.co.nz"))) return null;
 
             String fragment = value(uri.getRawFragment());
-            try { fragment = URLDecoder.decode(fragment, StandardCharsets.UTF_8.name()); }
-            catch (Exception ignored) {}
+            try { fragment = URLDecoder.decode(fragment, StandardCharsets.UTF_8.name()); } catch (Exception ignored) {}
 
             String handle = "";
             String key = "";
             String path = value(uri.getPath()).replaceAll("^/+|/+$", "");
             String[] bits = path.isEmpty() ? new String[0] : path.split("/");
-
             if (bits.length >= 2 && ("file".equalsIgnoreCase(bits[0]) || "embed".equalsIgnoreCase(bits[0]))) {
                 handle = bits[1];
                 key = fragment;
             } else if (fragment.startsWith("!")) {
                 String[] old = fragment.substring(1).split("!");
-                if (old.length >= 2) {
-                    handle = old[0];
-                    key = old[1];
-                }
+                if (old.length >= 2) { handle = old[0]; key = old[1]; }
             }
 
             if (key.contains("/")) key = key.substring(0, key.indexOf('/'));
             if (key.contains("?")) key = key.substring(0, key.indexOf('?'));
             key = key.trim();
             if (handle.isEmpty() || key.isEmpty()) return null;
-
             byte[] test = Base64.decode(key, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
             if (test.length != 32) return null;
             return new MegaLink(s, handle, key);
@@ -305,7 +368,7 @@ public class DownloadService extends Service {
         c.setConnectTimeout(25000);
         c.setReadTimeout(45000);
         c.setInstanceFollowRedirects(true);
-        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AnimeAV1/1.1.1");
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AnimeAV1/1.1");
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
@@ -346,10 +409,8 @@ public class DownloadService extends Service {
         }
 
         if (expected > 0 && done != expected) {
-            throw new IllegalStateException(String.format(Locale.US,
-                    "Descarga Mega incompleta: %d/%d bytes", done, expected));
+            throw new IllegalStateException(String.format(Locale.US, "Descarga Mega incompleta: %d/%d bytes", done, expected));
         }
-
         if (finalFile.exists() && !finalFile.delete()) throw new IllegalStateException("No se puede reemplazar el episodio existente");
         if (!part.renameTo(finalFile)) throw new IllegalStateException("No se puede finalizar el archivo descargado");
 
@@ -368,24 +429,17 @@ public class DownloadService extends Service {
         c.setRequestProperty("Content-Type", "application/json");
         byte[] body = ("[{\"a\":\"g\",\"g\":1,\"p\":\"" + handle + "\"}]").getBytes(StandardCharsets.UTF_8);
         c.setFixedLengthStreamingMode(body.length);
-        try (BufferedOutputStream out = new BufferedOutputStream(c.getOutputStream())) {
-            out.write(body);
-        }
+        try (BufferedOutputStream out = new BufferedOutputStream(c.getOutputStream())) { out.write(body); }
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
             throw new IllegalStateException("Mega API respondió HTTP " + code);
         }
         String json;
-        try (InputStream in = c.getInputStream()) {
-            json = readUtf8(in, 2 * 1024 * 1024);
-        } finally {
-            c.disconnect();
-        }
+        try (InputStream in = c.getInputStream()) { json = readUtf8(in, 2 * 1024 * 1024); }
+        finally { c.disconnect(); }
         JSONArray array = new JSONArray(json);
-        if (array.length() == 0 || !(array.get(0) instanceof JSONObject)) {
-            throw new IllegalStateException("Respuesta Mega inválida");
-        }
+        if (array.length() == 0 || !(array.get(0) instanceof JSONObject)) throw new IllegalStateException("Respuesta Mega inválida");
         JSONObject obj = array.getJSONObject(0);
         if (obj.has("e")) throw new IllegalStateException("Mega API error " + obj.optInt("e"));
         return obj;
@@ -408,11 +462,12 @@ public class DownloadService extends Service {
         if (r.totalBytes > 0) {
             int pct = (int) Math.min(100, (r.bytes * 100L) / r.totalBytes);
             text = titleFor(r) + " · " + pct + "%";
-        } else {
-            text = titleFor(r) + " · descargando";
-        }
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.notify(FOREGROUND_ID, buildProgressNotification(text, r.bytes, r.totalBytes));
+        } else text = titleFor(r) + " · descargando";
+        int waiting;
+        synchronized (queueLock) { waiting = queue.size(); }
+        if (waiting > 0) text += " · " + waiting + " en cola";
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
+                .notify(FOREGROUND_ID, buildProgressNotification(text, r.bytes, r.totalBytes));
     }
 
     private Notification buildProgressNotification(String text, long done, long total) {
@@ -420,8 +475,7 @@ public class DownloadService extends Service {
         PendingIntent pi = PendingIntent.getActivity(this, 0, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? new Notification.Builder(this, CHANNEL_ID)
-                : new Notification.Builder(this);
+                ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
         b.setSmallIcon(R.drawable.ic_launcher)
                 .setContentTitle("AnimeAV1")
                 .setContentText(text)
@@ -432,9 +486,7 @@ public class DownloadService extends Service {
         if (total > 0) {
             int pct = (int) Math.min(100, (done * 100L) / total);
             b.setProgress(100, pct, false);
-        } else {
-            b.setProgress(0, 0, true);
-        }
+        } else b.setProgress(0, 0, true);
         return b.build();
     }
 
@@ -443,8 +495,7 @@ public class DownloadService extends Service {
         PendingIntent pi = PendingIntent.getActivity(this, 1, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? new Notification.Builder(this, CHANNEL_ID)
-                : new Notification.Builder(this);
+                ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
         b.setSmallIcon(R.drawable.ic_launcher)
                 .setContentTitle(result.ok ? "Descarga completada" : "Error de descarga")
                 .setContentText(result.message)
@@ -474,6 +525,12 @@ public class DownloadService extends Service {
         return base + " · Ep. " + r.episode;
     }
 
+    private String taskKey(Intent intent) {
+        String slug = value(intent.getStringExtra(EXTRA_SLUG));
+        int episode = intent.getIntExtra(EXTRA_EPISODE, 0);
+        return slug.isEmpty() || episode <= 0 ? "" : slug + "#" + episode;
+    }
+
     private static String readUtf8(InputStream in, int maxBytes) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] b = new byte[32 * 1024];
@@ -495,16 +552,12 @@ public class DownloadService extends Service {
         super.onDestroy();
     }
 
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
+    @Override public IBinder onBind(Intent intent) { return null; }
 
     private static final class MegaLink {
         final String original;
         final String handle;
         final String key;
-
         MegaLink(String original, String handle, String key) {
             this.original = original;
             this.handle = handle;
@@ -516,12 +569,8 @@ public class DownloadService extends Service {
         final boolean ok;
         final String message;
         private Result(boolean ok, String message) { this.ok = ok; this.message = message; }
-        static Result success(String title, long bytes) {
-            return new Result(true, title + " · " + humanBytes(bytes));
-        }
-        static Result error(String title, String error) {
-            return new Result(false, title + " · " + error);
-        }
+        static Result success(String title, long bytes) { return new Result(true, title + " · " + humanBytes(bytes)); }
+        static Result error(String title, String error) { return new Result(false, title + " · " + error); }
         static String humanBytes(long bytes) {
             if (bytes >= 1024L * 1024L * 1024L) return String.format(Locale.US, "%.2f GB", bytes / (1024d * 1024d * 1024d));
             if (bytes >= 1024L * 1024L) return String.format(Locale.US, "%.1f MB", bytes / (1024d * 1024d));
