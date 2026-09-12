@@ -13,6 +13,7 @@ public class EpisodeStore extends SQLiteOpenHelper {
     private static final String DB_NAME = "offline.db";
     private static final int DB_VERSION = 1;
 
+    public static final String STATUS_PENDING = "pending";
     public static final String STATUS_RESOLVING = "resolving";
     public static final String STATUS_DOWNLOADING = "downloading";
     public static final String STATUS_COMPLETED = "completed";
@@ -82,8 +83,8 @@ public class EpisodeStore extends SQLiteOpenHelper {
 
     public synchronized boolean hasActiveDownload() {
         try (Cursor c = getReadableDatabase().rawQuery(
-                "SELECT 1 FROM downloads WHERE status IN (?,?) LIMIT 1",
-                new String[]{STATUS_RESOLVING, STATUS_DOWNLOADING})) {
+                "SELECT 1 FROM downloads WHERE status IN (?,?,?) LIMIT 1",
+                new String[]{STATUS_PENDING, STATUS_RESOLVING, STATUS_DOWNLOADING})) {
             return c.moveToFirst();
         }
     }
@@ -93,8 +94,8 @@ public class EpisodeStore extends SQLiteOpenHelper {
         v.put("status", STATUS_ERROR);
         v.put("error", "Descarga interrumpida");
         v.put("updated_at", System.currentTimeMillis());
-        getWritableDatabase().update("downloads", v, "status IN (?,?)",
-                new String[]{STATUS_RESOLVING, STATUS_DOWNLOADING});
+        getWritableDatabase().update("downloads", v, "status IN (?,?,?)",
+                new String[]{STATUS_PENDING, STATUS_RESOLVING, STATUS_DOWNLOADING});
     }
 
     public synchronized void delete(String slug, int episode) {
