@@ -17,6 +17,21 @@
         android:usesCleartextTraffic="false">
 
         <activity
+            android:name=".DownloadsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="animeav1downloads" android:host="open" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".OfflinePlayerActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="true">
