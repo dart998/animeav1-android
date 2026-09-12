@@ -49,6 +49,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
+    public static final String EXTRA_OPEN_DOWNLOADS = "open_downloads";
     private static final String HOME_URL = "https://animeav1.com/";
     private static final int DARK_FALLBACK = Color.rgb(16, 15, 20);
     private static final int REQ_NOTIFICATIONS = 41;
@@ -64,6 +65,7 @@ public class MainActivity extends Activity {
     private EpisodeRef currentEpisode;
     private boolean pendingDownloadAfterPermission;
     private boolean pendingBatchAfterPermission;
+    private boolean pendingOpenDownloads;
     private String pendingDownloadSource = "";
     private float pullStartY;
     private boolean pullStartedAtTop;
@@ -85,19 +87,22 @@ public class MainActivity extends Activity {
             EpisodeRef fromUrl = parseEpisode(webView.getUrl());
             if (fromUrl != null) currentEpisode = fromUrl;
             updateSiteDownloadButton();
+            refreshDownloadsOverlayIfOpen();
             if (currentEpisode != null && currentEpisode.slug.equals(slug) && currentEpisode.episode == episode
                     && EpisodeStore.STATUS_COMPLETED.equals(status)) {
                 injectOfflinePlayerIfAvailable();
             }
 
-            boolean terminal = EpisodeStore.STATUS_COMPLETED.equals(status) || EpisodeStore.STATUS_ERROR.equals(status);
+            boolean terminal = EpisodeStore.STATUS_COMPLETED.equals(status)
+                    || EpisodeStore.STATUS_ERROR.equals(status)
+                    || EpisodeStore.STATUS_CANCELLED.equals(status);
             if (batchPendingCount > 0 && terminal) {
                 if (EpisodeStore.STATUS_COMPLETED.equals(status)) batchSuccessCount++;
                 else batchErrorCount++;
                 batchPendingCount--;
                 if (batchPendingCount == 0) {
                     String summary = batchSuccessCount + " descargados";
-                    if (batchErrorCount > 0) summary += " · " + batchErrorCount + " con error";
+                    if (batchErrorCount > 0) summary += " · " + batchErrorCount + " con error/cancelados";
                     Toast.makeText(MainActivity.this, summary, Toast.LENGTH_LONG).show();
                     batchSuccessCount = 0;
                     batchErrorCount = 0;
@@ -127,6 +132,9 @@ public class MainActivity extends Activity {
         store.markInterruptedDownloads();
         registerDownloadReceiver();
         setupPullToRefresh();
+        pendingOpenDownloads = getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false);
+        if (getIntent() != null && getIntent().getData() != null
+                && "downloads".equalsIgnoreCase(value(getIntent().getData().getHost()))) pendingOpenDownloads = true;
 
         applySystemBarInsets();
         setStatusBarAppearance(DARK_FALLBACK, false);
@@ -214,6 +222,10 @@ public class MainActivity extends Activity {
                 syncWatchedAndCleanup(false);
                 syncStatusBarWithWebTheme();
                 enableImmersiveNavigation();
+                if (pendingOpenDownloads && url != null && url.contains("animeav1.com")) {
+                    pendingOpenDownloads = false;
+                    view.postDelayed(MainActivity.this::showOfflineLibrary, 250);
+                }
             }
 
             @Override
@@ -235,10 +247,37 @@ public class MainActivity extends Activity {
         else webView.restoreState(savedInstanceState);
     }
 
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        boolean open = intent != null && intent.getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false);
+        if (intent != null && intent.getData() != null
+                && "downloads".equalsIgnoreCase(value(intent.getData().getHost()))) open = true;
+        if (open) {
+            if (webView != null && webView.getUrl() != null && webView.getUrl().contains("animeav1.com")) showOfflineLibrary();
+            else {
+                pendingOpenDownloads = true;
+                if (webView != null) webView.loadUrl(HOME_URL);
+            }
+        }
+    }
+
     private void handleAppUri(Uri uri) {
         String host = uri.getHost() == null ? "" : uri.getHost();
         if ("downloads".equalsIgnoreCase(host)) {
             showOfflineLibrary();
+            return;
+        }
+        if ("downloads-action".equalsIgnoreCase(host)) {
+            handleDownloadsAction(uri);
+            return;
+        }
+        if ("series-download".equalsIgnoreCase(host)) {
+            String slug = value(uri.getQueryParameter("slug"));
+            int published = 0;
+            try { published = Integer.parseInt(value(uri.getQueryParameter("published"))); } catch (Exception ignored) {}
+            prepareSeriesDownload(slug, published);
             return;
         }
         if ("library-changed".equalsIgnoreCase(host)) {
@@ -261,6 +300,95 @@ public class MainActivity extends Activity {
             if (fromUrl != null) currentEpisode = fromUrl;
         }
         requestDownload(source);
+    }
+
+    private void handleDownloadsAction(Uri uri) {
+        String action = value(uri.getQueryParameter("action"));
+        String slug = value(uri.getQueryParameter("slug"));
+        int episode = 0;
+        try { episode = Integer.parseInt(value(uri.getQueryParameter("episode"))); } catch (Exception ignored) {}
+        if (slug.isEmpty() || episode <= 0) return;
+        EpisodeStore.DownloadRecord r = store.get(slug, episode);
+        if (r == null) return;
+
+        if ("cancel".equals(action)) {
+            Intent i = new Intent(this, DownloadService.class).setAction(DownloadService.ACTION_CANCEL)
+                    .putExtra(DownloadService.EXTRA_SLUG, slug).putExtra(DownloadService.EXTRA_EPISODE, episode);
+            startService(i);
+        } else if ("delete".equals(action)) {
+            if (!r.path.isEmpty()) new File(r.path).delete();
+            store.delete(slug, episode);
+            refreshDownloadsOverlayIfOpen();
+            updateSiteDownloadButton();
+        } else if ("delete-record".equals(action)) {
+            store.delete(slug, episode);
+            refreshDownloadsOverlayIfOpen();
+        } else if ("retry".equals(action)) {
+            String page = r.pageUrl.isEmpty() ? "https://animeav1.com/media/" + r.slug + "/" + r.episode : r.pageUrl;
+            enqueueEpisode(r.slug, r.episode, page, r.title, r.sourceUrl, cookieForAnimeAv1());
+        } else if ("play".equals(action)) {
+            loadOfflinePage(r);
+        }
+    }
+
+    private void prepareSeriesDownload(String slug, int published) {
+        if (slug.isEmpty() || published <= 0) {
+            Toast.makeText(this, "No se pudieron determinar los episodios publicados", Toast.LENGTH_LONG).show();
+            return;
+        }
+        String cookie = cookieForAnimeAv1();
+        if (cookie.isEmpty()) {
+            Toast.makeText(this, "Inicia sesión en AnimeAV1 para consultar tu progreso", Toast.LENGTH_LONG).show();
+            return;
+        }
+        libraryExecutor.execute(() -> {
+            try {
+                AnimeAv1LibraryClient.Item found = null;
+                for (AnimeAv1LibraryClient.Item item : AnimeAv1LibraryClient.fetch(cookie)) {
+                    if (slug.equals(item.slug)) { found = item; break; }
+                }
+                if (found == null) throw new IllegalStateException("La serie no está en tu biblioteca de AnimeAV1");
+                int seen = Math.max(0, found.seen);
+                int last = Math.max(0, published);
+                ArrayList<BatchEpisode> pending = new ArrayList<>();
+                for (int ep = seen + 1; ep <= last; ep++) {
+                    EpisodeStore.DownloadRecord existing = store.get(slug, ep);
+                    if (existing != null) {
+                        if (EpisodeStore.STATUS_COMPLETED.equals(existing.status) && !existing.path.isEmpty() && new File(existing.path).isFile()) continue;
+                        if (EpisodeStore.STATUS_PENDING.equals(existing.status)
+                                || EpisodeStore.STATUS_RESOLVING.equals(existing.status)
+                                || EpisodeStore.STATUS_DOWNLOADING.equals(existing.status)) continue;
+                    }
+                    pending.add(new BatchEpisode(slug, found.title, ep));
+                }
+                AnimeAv1LibraryClient.Item item = found;
+                runOnUiThread(() -> confirmSeriesDownload(pending, item.seen, last, cookie));
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, messageOf(e), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void confirmSeriesDownload(List<BatchEpisode> episodes, int seen, int published, String cookie) {
+        if (episodes.isEmpty()) {
+            Toast.makeText(this, "No hay episodios no vistos publicados pendientes de descargar", Toast.LENGTH_LONG).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Descargar no vistos")
+                .setMessage("Vistos: " + seen + " · Publicados: " + published + "\nSe descargarán " + episodes.size() + " episodio" + (episodes.size() == 1 ? "" : "s") + ".")
+                .setPositiveButton("Descargar", (dialog, which) -> {
+                    batchPendingCount = episodes.size();
+                    batchSuccessCount = 0;
+                    batchErrorCount = 0;
+                    for (BatchEpisode ep : episodes) {
+                        String page = "https://animeav1.com/media/" + ep.slug + "/" + ep.episode;
+                        enqueueEpisode(ep.slug, ep.episode, page, ep.title, "", cookie);
+                    }
+                    Toast.makeText(this, episodes.size() + " episodios añadidos a la cola", Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -339,7 +467,7 @@ public class MainActivity extends Activity {
             }
             return "Descargando…";
         }
-        if (EpisodeStore.STATUS_ERROR.equals(r.status)) return "Reintentar";
+        if (EpisodeStore.STATUS_ERROR.equals(r.status) || EpisodeStore.STATUS_CANCELLED.equals(r.status)) return "Reintentar";
         return "Descargar";
     }
 
@@ -481,6 +609,7 @@ public class MainActivity extends Activity {
                 if (deleted > 0) {
                     runOnUiThread(() -> {
                         updateSiteDownloadButton();
+                        refreshDownloadsOverlayIfOpen();
                         Toast.makeText(this, deleted + (deleted == 1 ? " episodio visto eliminado" : " episodios vistos eliminados"), Toast.LENGTH_LONG).show();
                     });
                 }
@@ -537,23 +666,21 @@ public class MainActivity extends Activity {
 
     private void showOfflineLibrary() {
         syncWatchedAndCleanup(false);
-        List<EpisodeStore.DownloadRecord> records = store.listCompleted();
-        ArrayList<EpisodeStore.DownloadRecord> existing = new ArrayList<>();
-        ArrayList<String> labels = new ArrayList<>();
-        for (EpisodeStore.DownloadRecord r : records) {
-            File f = new File(r.path);
-            if (!f.isFile()) continue;
-            existing.add(r);
-            String title = r.title.isEmpty() ? r.slug : r.title;
-            labels.add(title + " · Ep. " + r.episode + " · " + humanBytes(f.length()));
+        String url = webView.getUrl();
+        if (url == null || !url.contains("animeav1.com")) {
+            pendingOpenDownloads = true;
+            webView.loadUrl(HOME_URL);
+            return;
         }
+        webView.evaluateJavascript(DownloadsIntegration.render(store.listAll()), null);
+        enableImmersiveNavigation();
+    }
 
-        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle("Descargas");
-        if (existing.isEmpty()) b.setMessage("Todavía no hay episodios descargados.");
-        else b.setItems(labels.toArray(new String[0]), (dialog, which) -> showOfflineActions(existing.get(which)));
-        b.setPositiveButton("Descargar no vistos", (dialog, which) -> downloadUnwatchedEpisodes());
-        b.setNegativeButton("Cerrar", null);
-        b.show();
+    private void refreshDownloadsOverlayIfOpen() {
+        if (webView == null) return;
+        webView.evaluateJavascript("(function(){return !!window.__animeav1DownloadsOpen})()", value -> {
+            if ("true".equals(value)) webView.evaluateJavascript(DownloadsIntegration.render(store.listAll()), null);
+        });
     }
 
     private void showOfflineActions(EpisodeStore.DownloadRecord r) {
@@ -745,9 +872,16 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (customView != null) exitVideoFullscreen();
-        else if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        if (customView != null) {
+            exitVideoFullscreen();
+            return;
+        }
+        webView.evaluateJavascript("(function(){var p=document.getElementById('animeav1-downloads-page');if(p){p.remove();window.__animeav1DownloadsOpen=false;return true}return false})()", value -> {
+            if (!"true".equals(value)) {
+                if (webView.canGoBack()) webView.goBack();
+                else MainActivity.super.onBackPressed();
+            }
+        });
     }
 
     private static final class EpisodeRef {
