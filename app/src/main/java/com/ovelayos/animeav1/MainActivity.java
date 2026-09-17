@@ -23,6 +23,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.JsResult;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -50,6 +51,7 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     public static final String EXTRA_OPEN_DOWNLOADS = "open_downloads";
+    public static final String EXTRA_OPEN_URL = "open_url";
     private static final String HOME_URL = "https://animeav1.com/";
     private static final int DARK_FALLBACK = Color.rgb(16, 15, 20);
     private static final int REQ_NOTIFICATIONS = 41;
@@ -117,7 +119,7 @@ public class MainActivity extends Activity {
         }
     };
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -135,6 +137,7 @@ public class MainActivity extends Activity {
         pendingOpenDownloads = getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false);
         if (getIntent() != null && getIntent().getData() != null
                 && "downloads".equalsIgnoreCase(value(getIntent().getData().getHost()))) pendingOpenDownloads = true;
+        String initialUrl = notificationUrl(getIntent());
 
         applySystemBarInsets();
         setStatusBarAppearance(DARK_FALLBACK, false);
@@ -153,6 +156,7 @@ public class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setSupportMultipleWindows(false);
+        webView.addJavascriptInterface(new AppBridge(), "AnimeAV1Android");
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -243,7 +247,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        if (savedInstanceState == null) webView.loadUrl(HOME_URL);
+        if (savedInstanceState == null) webView.loadUrl(initialUrl.isEmpty() ? HOME_URL : initialUrl);
         else webView.restoreState(savedInstanceState);
     }
 
@@ -251,6 +255,11 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        String targetUrl = notificationUrl(intent);
+        if (!targetUrl.isEmpty()) {
+            if (webView != null) webView.evaluateJavascript(DownloadsIntegration.close(), ignored -> webView.loadUrl(targetUrl));
+            return;
+        }
         boolean open = intent != null && intent.getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false);
         if (intent != null && intent.getData() != null
                 && "downloads".equalsIgnoreCase(value(intent.getData().getHost()))) open = true;
@@ -260,6 +269,31 @@ public class MainActivity extends Activity {
                 pendingOpenDownloads = true;
                 if (webView != null) webView.loadUrl(HOME_URL);
             }
+        }
+    }
+
+    private String notificationUrl(Intent intent) {
+        if (intent == null) return "";
+        String raw = value(intent.getStringExtra(EXTRA_OPEN_URL));
+        if (raw.isEmpty() && intent.getData() != null) raw = intent.getData().toString();
+        if (raw.isEmpty()) return "";
+        try {
+            Uri u = Uri.parse(raw);
+            String scheme = value(u.getScheme()).toLowerCase(Locale.US);
+            String host = value(u.getHost()).toLowerCase(Locale.US);
+            if (("http".equals(scheme) || "https".equals(scheme))
+                    && ("animeav1.com".equals(host) || host.endsWith(".animeav1.com"))) return raw;
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private final class AppBridge {
+        @JavascriptInterface
+        public void openDownloads() {
+            runOnUiThread(() -> {
+                String url = webView == null ? "" : value(webView.getUrl());
+                if (url.contains("animeav1.com")) showOfflineLibrary();
+            });
         }
     }
 
@@ -325,7 +359,7 @@ public class MainActivity extends Activity {
             refreshDownloadsOverlayIfOpen();
         } else if ("retry".equals(action)) {
             String page = r.pageUrl.isEmpty() ? "https://animeav1.com/media/" + r.slug + "/" + r.episode : r.pageUrl;
-            enqueueEpisode(r.slug, r.episode, page, r.title, r.sourceUrl, cookieForAnimeAv1());
+            enqueueEpisode(r.slug, r.episode, page, r.title, r.sourceUrl, cookieForAnimeAv1(), false);
         } else if ("play".equals(action)) {
             loadOfflinePage(r);
         }
@@ -383,7 +417,7 @@ public class MainActivity extends Activity {
                     batchErrorCount = 0;
                     for (BatchEpisode ep : episodes) {
                         String page = "https://animeav1.com/media/" + ep.slug + "/" + ep.episode;
-                        enqueueEpisode(ep.slug, ep.episode, page, ep.title, "", cookie);
+                        enqueueEpisode(ep.slug, ep.episode, page, ep.title, "", cookie, true);
                     }
                     Toast.makeText(this, episodes.size() + " episodios añadidos a la cola", Toast.LENGTH_LONG).show();
                 })
@@ -503,11 +537,11 @@ public class MainActivity extends Activity {
     private void startEpisodeDownload(String sourceUrl) {
         if (currentEpisode == null) return;
         enqueueEpisode(currentEpisode.slug, currentEpisode.episode, currentEpisode.pageUrl,
-                currentEpisode.title, value(sourceUrl), cookieForAnimeAv1());
+                currentEpisode.title, value(sourceUrl), cookieForAnimeAv1(), false);
         webView.evaluateJavascript(SiteIntegration.updateDownloadLabel("Preparando…"), null);
     }
 
-    private void enqueueEpisode(String slug, int episode, String pageUrl, String title, String sourceUrl, String cookie) {
+    private void enqueueEpisode(String slug, int episode, String pageUrl, String title, String sourceUrl, String cookie, boolean bulk) {
         Intent i = new Intent(this, DownloadService.class);
         i.putExtra(DownloadService.EXTRA_SLUG, slug);
         i.putExtra(DownloadService.EXTRA_EPISODE, episode);
@@ -515,6 +549,7 @@ public class MainActivity extends Activity {
         i.putExtra(DownloadService.EXTRA_TITLE, title);
         i.putExtra(DownloadService.EXTRA_SOURCE_URL, sourceUrl);
         i.putExtra(DownloadService.EXTRA_COOKIE, cookie);
+        i.putExtra(DownloadService.EXTRA_BULK, bulk);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
         else startService(i);
     }
@@ -586,7 +621,7 @@ public class MainActivity extends Activity {
                     batchErrorCount = 0;
                     for (BatchEpisode ep : episodes) {
                         String page = "https://animeav1.com/media/" + ep.slug + "/" + ep.episode;
-                        enqueueEpisode(ep.slug, ep.episode, page, ep.title, "", cookie);
+                        enqueueEpisode(ep.slug, ep.episode, page, ep.title, "", cookie, true);
                     }
                     Toast.makeText(this, episodes.size() + " episodios añadidos a la cola", Toast.LENGTH_LONG).show();
                 })
