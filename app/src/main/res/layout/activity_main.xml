@@ -5,18 +5,50 @@
     android:layout_height="match_parent"
     android:background="#100F14">
 
-    <WebView
-        android:id="@+id/webView"
+    <LinearLayout
+        android:id="@+id/appContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-    <ProgressBar
-        android:id="@+id/progressBar"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="3dp"
-        android:layout_gravity="top"
-        android:max="100" />
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <WebView
+                android:id="@+id/webView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#100F14" />
+
+            <ProgressBar
+                android:id="@+id/progressBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_gravity="top"
+                android:max="100"
+                android:progressTint="#21EAD8" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/bottomNavigation"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:background="#121117"
+            android:elevation="12dp"
+            android:orientation="horizontal"
+            android:paddingTop="5dp"
+            android:paddingBottom="4dp">
+
+            <TextView android:id="@+id/navHome" style="@style/BottomNavItem" android:drawableTop="@drawable/ic_home" android:text="Inicio" />
+            <TextView android:id="@+id/navDownloads" style="@style/BottomNavItem" android:drawableTop="@drawable/ic_download" android:text="Descargas" />
+            <TextView android:id="@+id/navSchedule" style="@style/BottomNavItem" android:drawableTop="@drawable/ic_calendar" android:text="Horario" />
+            <TextView android:id="@+id/navLists" style="@style/BottomNavItem" android:drawableTop="@drawable/ic_list" android:text="Mis Listas" />
+            <TextView android:id="@+id/navAccount" style="@style/BottomNavItem" android:drawableTop="@drawable/ic_account" android:text="Mi cuenta" />
+        </LinearLayout>
+    </LinearLayout>
 
     <FrameLayout
         android:id="@+id/fullscreenContainer"
@@ -24,5 +56,4 @@
         android:layout_height="match_parent"
         android:background="#000000"
         android:visibility="gone" />
-
 </FrameLayout>

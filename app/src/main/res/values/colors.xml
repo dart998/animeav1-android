@@ -1,5 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#000000</color>
-    <color name="white">#FFFFFF</color>
+    <color name="animeav1_bg">#100F14</color>
+    <color name="animeav1_nav">#121117</color>
+    <color name="animeav1_accent">#21EAD8</color>
 </resources>
