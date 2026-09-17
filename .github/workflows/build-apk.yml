@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - 'fix/**'
+      - 'rewrite/**'
 
 permissions:
   contents: write
@@ -15,6 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate WebView JavaScript
+        run: python3 scripts/validate-web-scripts.py
 
       - uses: actions/setup-java@v4
         with:
@@ -72,6 +76,21 @@ jobs:
         with:
           name: animeav1-v${{ steps.version.outputs.version }}-apk
           path: ${{ steps.version.outputs.apk }}
+
+      - name: Enable KVM for emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test offline UI on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: bash scripts/smoke-offline.sh
 
       - name: Create or update GitHub Release
         if: github.ref == 'refs/heads/main'

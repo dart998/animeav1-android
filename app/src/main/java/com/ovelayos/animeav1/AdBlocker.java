@@ -112,6 +112,8 @@ public final class AdBlocker {
         String host = uri.getHost();
         if (host != null) {
             host = host.toLowerCase(Locale.ROOT);
+            // Never block first-party scripts, styles, images or account requests.
+            if (host.equals("animeav1.com") || host.endsWith(".animeav1.com")) return false;
             String candidate = host;
             while (candidate.contains(".")) {
                 if (BLOCKED_HOSTS.contains(candidate)) return true;
@@ -137,21 +139,15 @@ public final class AdBlocker {
     }
 
     public static String cosmeticCleanupScript() {
-        return "(function(){" +
-                "if(window.__animeav1AdCleaner)return;window.__animeav1AdCleaner=true;" +
-                "const selectors=[" +
-                "'iframe[src*=\\\"ads\\\" i]','iframe[src*=\\\"doubleclick\\\" i]'," +
-                "'iframe[src*=\\\"adsterra\\\" i]','iframe[src*=\\\"onclick\\\" i]'," +
-                "'[id^=\\\"ad-\\\" i]','[id*=\\\"-ad-\\\" i]','[class^=\\\"ad-\\\" i]','[class*=\\\" ad-\\\" i]'," +
-                "'[class*=\\\"advert\\\" i]','[id*=\\\"advert\\\" i]','[class*=\\\"banner-ad\\\" i]'," +
-                "'[class*=\\\"popup\\\" i]','[class*=\\\"popunder\\\" i]','[id*=\\\"popup\\\" i]'," +
-                "'[aria-label*=\\\"advertisement\\\" i]','[data-ad-slot]','[data-ad-client]'" +
-                "];" +
-                "const clean=()=>{selectors.forEach(s=>{try{document.querySelectorAll(s).forEach(e=>e.remove())}catch(e){}});" +
-                "document.documentElement.style.overflow='auto';document.body&& (document.body.style.overflow='auto');};" +
-                "clean();setInterval(clean,1500);" +
-                "new MutationObserver(clean).observe(document.documentElement,{childList:true,subtree:true,attributes:true});" +
-                "window.open=function(){return null;};" +
-                "})();";
+        return """
+                (function(){
+                  if(document.getElementById('animeav1-ad-style'))return;
+                  var style=document.createElement('style');style.id='animeav1-ad-style';
+                  style.textContent=`iframe[src*="doubleclick" i],iframe[src*="adsterra" i],
+                    iframe[src*="onclick" i],[data-ad-slot],[data-ad-client],
+                    [aria-label*="advertisement" i]{display:none!important}`;
+                  document.head.appendChild(style);
+                })()
+                """;
     }
 }

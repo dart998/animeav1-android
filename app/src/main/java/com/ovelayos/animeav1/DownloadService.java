@@ -76,6 +76,10 @@ public class DownloadService extends Service {
     private volatile String currentSlug = "";
     private volatile int currentEpisode;
     private volatile boolean currentBulk;
+    private int bulkFinished;
+    private int bulkSucceeded;
+    private String bulkSeries = "";
+    private boolean bulkMultipleSeries;
     private int latestStartId;
 
     @Override
@@ -235,9 +239,11 @@ public class DownloadService extends Service {
             currentBulk = task.getBooleanExtra(EXTRA_BULK, false);
             if (isCancelled(key)) {
                 markCancelled(currentSlug, currentEpisode);
+                if (currentBulk) recordBulkResult(false);
             } else {
                 Result r = performDownload(task, key);
-                if (!r.cancelled) postFinalNotification(r, task);
+                if (currentBulk) recordBulkResult(r.ok);
+                else if (!r.cancelled) postFinalNotification(r, task);
             }
             synchronized (queueLock) {
                 queuedKeys.remove(key);
@@ -249,9 +255,39 @@ public class DownloadService extends Service {
             currentPage = "";
             currentBulk = false;
         }
+        if (bulkFinished > 0) postBulkSummary();
         if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE);
         else stopForeground(true);
         stopSelfResult(latestStartId);
+    }
+
+    private void recordBulkResult(boolean success) {
+        bulkFinished++;
+        if (success) bulkSucceeded++;
+        if (bulkSeries.isEmpty() && !bulkMultipleSeries) bulkSeries = currentSlug;
+        else if (!bulkSeries.equals(currentSlug)) bulkMultipleSeries = true;
+    }
+
+    private void postBulkSummary() {
+        Intent open = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (!bulkMultipleSeries && !bulkSeries.isEmpty())
+            open.putExtra(MainActivity.EXTRA_OPEN_URL, "https://animeav1.com/media/" + bulkSeries);
+        else open.putExtra(MainActivity.EXTRA_OPEN_DOWNLOADS, true);
+        PendingIntent pi = PendingIntent.getActivity(this, 8061, open,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        b.setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("Lote de descargas terminado")
+                .setContentText(bulkSucceeded + " de " + bulkFinished + " episodios descargados")
+                .setContentIntent(pi).setAutoCancel(true);
+        if (bulkSucceeded > 0) b.addAction(android.R.drawable.ic_media_play, "Ver", pi);
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(FINAL_BASE_ID - 1, b.build());
+        bulkFinished = 0;
+        bulkSucceeded = 0;
+        bulkSeries = "";
+        bulkMultipleSeries = false;
     }
 
     private Result performDownload(Intent i, String key) {
