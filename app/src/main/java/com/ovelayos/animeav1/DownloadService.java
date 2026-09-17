@@ -523,7 +523,7 @@ public class DownloadService extends Service {
     private Notification buildProgressNotification(String text, long done, long total, String slug, int ep, String page, boolean bulk) {
         PendingIntent pi = viewPendingIntent(slug, ep, page, bulk, 1000);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
-        b.setSmallIcon(R.drawable.ic_launcher)
+        b.setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("AnimeAV1")
                 .setContentText(text)
                 .setContentIntent(pi)
@@ -548,7 +548,7 @@ public class DownloadService extends Service {
         boolean bulk = task.getBooleanExtra(EXTRA_BULK, false);
         PendingIntent pi = viewPendingIntent(slug, ep, page, bulk, 2000);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
-        b.setSmallIcon(R.drawable.ic_launcher)
+        b.setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(r.ok ? "Descarga completada" : "Error de descarga")
                 .setContentText(r.message)
                 .setContentIntent(pi)

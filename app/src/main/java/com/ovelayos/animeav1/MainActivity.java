@@ -911,7 +911,7 @@ public class MainActivity extends Activity {
             exitVideoFullscreen();
             return;
         }
-        webView.evaluateJavascript("(function(){var p=document.getElementById('animeav1-downloads-page');if(p){p.remove();window.__animeav1DownloadsOpen=false;return true}return false})()", value -> {
+        webView.evaluateJavascript("(function(){if(!document.getElementById('animeav1-downloads-page'))return false;var p=document.getElementById('animeav1-downloads-page');p.remove();if(window.__animeav1DownloadsCleanup)window.__animeav1DownloadsCleanup();return true})()", value -> {
             if (!"true".equals(value)) {
                 if (webView.canGoBack()) webView.goBack();
                 else MainActivity.super.onBackPressed();
