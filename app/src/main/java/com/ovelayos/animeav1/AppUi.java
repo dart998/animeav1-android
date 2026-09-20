@@ -12,7 +12,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 final class AppUi {
-    static final int BG=Color.rgb(16,16,22), SURFACE=Color.rgb(26,25,34), ALT=Color.rgb(37,35,48);
+    static final int BG=Color.rgb(16,15,20), SURFACE=Color.rgb(26,25,34), ALT=Color.rgb(37,35,48);
     static final int BRAND=Color.rgb(32,214,199), TEXT=Color.rgb(247,247,251), MUTED=Color.rgb(167,165,180), DANGER=Color.rgb(255,100,124);
     static int dp(Context c,int value){return Math.round(value*c.getResources().getDisplayMetrics().density);}
     static TextView text(Context c,String value,int sp,int color){TextView v=new TextView(c);v.setText(value);v.setTextSize(sp);v.setTextColor(color);v.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);return v;}

@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Insets;
 import android.net.ConnectivityManager;
@@ -29,6 +30,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -54,7 +56,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private static final int[] NAV_ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_downloads,R.drawable.ic_nav_schedule,R.drawable.ic_nav_lists,R.drawable.ic_nav_account};
 
     private WebView web;
-    private FrameLayout nativeContent,fullscreen;
+    private FrameLayout content,nativeContent,fullscreen;
     private ProgressBar progress;
     private LinearLayout root,navigation;
     private final ImageView[] navIcons=new ImageView[5];
@@ -76,8 +78,8 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     @SuppressLint({"SetJavaScriptEnabled","JavascriptInterface"})
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);setContentView(R.layout.activity_main);getWindow().setStatusBarColor(AppUi.BG);getWindow().setNavigationBarColor(AppUi.BG);
-        root=findViewById(R.id.root);web=findViewById(R.id.web_view);nativeContent=findViewById(R.id.native_content);progress=findViewById(R.id.page_progress);fullscreen=findViewById(R.id.fullscreen_video);navigation=findViewById(R.id.bottom_navigation);
-        applySystemBarInsets();hideSystemNavigation();
+        root=findViewById(R.id.root);content=findViewById(R.id.content);web=findViewById(R.id.web_view);nativeContent=findViewById(R.id.native_content);progress=findViewById(R.id.page_progress);fullscreen=findViewById(R.id.fullscreen_video);navigation=findViewById(R.id.bottom_navigation);
+        configureNavigation(getResources().getConfiguration());applySystemBarInsets();hideSystemNavigation();
         store=new DownloadStore(this);store.recoverInterrupted();setupNavigation();setupWebView();setupNativeSwipe();registerUpdates();observeNetwork();
         String requested=getIntent().getStringExtra(EXTRA_URL);
         if(state!=null)web.restoreState(state);else if(isOnline())web.loadUrl(requested==null?URLS[0]:requested);else showOffline();
@@ -87,10 +89,11 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void setupNavigation(){
         for(int i=0;i<LABELS.length;i++){
             final int index=i;
-            LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,7),0,AppUi.dp(this,5));item.setBackgroundColor(android.graphics.Color.TRANSPARENT);item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));
-            ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,29),AppUi.dp(this,29)));
-            TextView label=AppUi.text(this,LABELS[i],12,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,0,1);labelParams.topMargin=AppUi.dp(this,3);item.addView(label,labelParams);
-            navigation.addView(item,new LinearLayout.LayoutParams(0,-1,1));navIcons[i]=icon;navLabels[i]=label;
+            LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,4),0,AppUi.dp(this,3));item.setBackgroundColor(android.graphics.Color.TRANSPARENT);item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));
+            ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,25),AppUi.dp(this,25)));
+            TextView label=AppUi.text(this,LABELS[i],11,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,0,1);labelParams.topMargin=AppUi.dp(this,2);item.addView(label,labelParams);
+            LinearLayout.LayoutParams itemParams=navigation.getOrientation()==LinearLayout.VERTICAL?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0,-1,1);
+            navigation.addView(item,itemParams);navIcons[i]=icon;navLabels[i]=label;
         }
         markSelected(0);
     }
@@ -104,6 +107,16 @@ public final class MainActivity extends Activity implements DownloadsView.Action
             });
             root.requestApplyInsets();
         }
+    }
+
+    private void configureNavigation(Configuration configuration){
+        boolean landscape=configuration.orientation==Configuration.ORIENTATION_LANDSCAPE;
+        root.setOrientation(landscape?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+        navigation.setOrientation(landscape?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
+        content.setLayoutParams(landscape?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));
+        navigation.setLayoutParams(landscape?new LinearLayout.LayoutParams(AppUi.dp(this,68),-1):new LinearLayout.LayoutParams(-1,AppUi.dp(this,68)));
+        for(int i=0;i<navigation.getChildCount();i++)navigation.getChildAt(i).setLayoutParams(landscape?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0,-1,1));
+        navigation.requestLayout();
     }
 
     /**
@@ -138,10 +151,11 @@ public final class MainActivity extends Activity implements DownloadsView.Action
             @Override public boolean onCreateWindow(WebView view,boolean dialog,boolean gesture,android.os.Message result){return false;}
         });
         web.setWebViewClient(new WebViewClient(){
-            @Override public void onPageStarted(WebView view,String url,Bitmap icon){progress.setVisibility(View.VISIBLE);showWeb();markForUrl(url);}
-            @Override public void onPageFinished(WebView view,String url){CookieManager.getInstance().flush();inject();syncLibrary(false);}
+            @Override public void onPageStarted(WebView view,String url,Bitmap icon){if(AdBlocker.shouldBlock(Uri.parse(url))){view.stopLoading();if(view.canGoBack())view.goBack();else view.loadUrl(URLS[0]);return;}progress.setVisibility(View.VISIBLE);showWeb();markForUrl(url);}
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){return AdBlocker.shouldBlock(request.getUrl())?AdBlocker.emptyResponse():super.shouldInterceptRequest(view,request);}
+            @Override public void onPageFinished(WebView view,String url){CookieManager.getInstance().flush();view.evaluateJavascript(AdBlocker.cleanupScript(),null);inject();syncLibrary(false);}
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame()&&!isOnline())showOffline();}
-            @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri uri=request.getUrl();String scheme=uri.getScheme();if("http".equalsIgnoreCase(scheme)||"https".equalsIgnoreCase(scheme))return false;try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}
+            @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri uri=request.getUrl();if(AdBlocker.shouldBlock(uri))return true;String scheme=uri.getScheme();if("http".equalsIgnoreCase(scheme)||"https".equalsIgnoreCase(scheme))return false;try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}
         });
     }
 
@@ -193,6 +207,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void registerUpdates(){IntentFilter f=new IntentFilter(DownloadService.ACTION_UPDATED);if(Build.VERSION.SDK_INT>=33)registerReceiver(updates,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,f);}
 
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String url=intent.getStringExtra(EXTRA_URL);if(url!=null){if(isOnline()){showWeb();web.loadUrl(url);}else showDownloads();}}
+    @Override public void onConfigurationChanged(Configuration configuration){super.onConfigurationChanged(configuration);configureNavigation(configuration);root.requestApplyInsets();hideSystemNavigation();}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus)hideSystemNavigation();}
     @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
     @Override public void onBackPressed(){if(customView!=null){exitFullscreen();return;}if(selected==1){if(isOnline())select(0);else showOffline();return;}if(offlineLanding){super.onBackPressed();return;}if(web.canGoBack())web.goBack();else super.onBackPressed();}
