@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AnimeAV1</string>
+    <string name="offline_title">Estás sin conexión</string>
+    <string name="offline_message">AnimeAV1 no está disponible en este momento. Puedes seguir viendo los episodios que tienes descargados.</string>
 </resources>

@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#000000</color>
-    <color name="white">#FFFFFF</color>
+    <color name="app_background">#101016</color>
+    <color name="surface">#1A1922</color>
+    <color name="surface_alt">#252330</color>
+    <color name="brand_turquoise">#20D6C7</color>
+    <color name="text_primary">#F7F7FB</color>
+    <color name="text_secondary">#A7A5B4</color>
+    <color name="nav_background">#17161E</color>
+    <color name="danger">#FF647C</color>
 </resources>
