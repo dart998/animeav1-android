@@ -1,7 +1,5 @@
 package com.ovelayos.animeav1;
 
-import org.json.JSONTokener;
-
 import java.io.BufferedInputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -66,8 +64,33 @@ final class AnimeAv1Client {
     private static String string(String block, String name) {
         Matcher m = Pattern.compile("(?:\\\"?" + Pattern.quote(name) + "\\\"?)\\s*:\\s*(\\\"(?:\\\\.|[^\\\"\\\\])*\\\")").matcher(block);
         if (!m.find()) return "";
-        try { Object value = new JSONTokener(m.group(1)).nextValue(); return value instanceof String ? (String)value : ""; }
-        catch (Exception ignored) { return ""; }
+        return unescapeJsonString(m.group(1));
+    }
+    private static String unescapeJsonString(String quoted) {
+        if (quoted == null || quoted.length() < 2) return "";
+        StringBuilder out = new StringBuilder(quoted.length() - 2);
+        for (int i = 1; i < quoted.length() - 1; i++) {
+            char c = quoted.charAt(i);
+            if (c != '\\' || i + 1 >= quoted.length() - 1) { out.append(c); continue; }
+            char escaped = quoted.charAt(++i);
+            switch (escaped) {
+                case '\"': out.append('\"'); break;
+                case '\\': out.append('\\'); break;
+                case '/': out.append('/'); break;
+                case 'b': out.append('\b'); break;
+                case 'f': out.append('\f'); break;
+                case 'n': out.append('\n'); break;
+                case 'r': out.append('\r'); break;
+                case 't': out.append('\t'); break;
+                case 'u':
+                    if (i + 4 >= quoted.length()) return "";
+                    try { out.append((char) Integer.parseInt(quoted.substring(i + 1, i + 5), 16)); i += 4; }
+                    catch (NumberFormatException invalid) { return ""; }
+                    break;
+                default: out.append(escaped);
+            }
+        }
+        return out.toString();
     }
     private static String objectValue(String block, String name) {
         Matcher m = Pattern.compile("(?:\\\"?" + Pattern.quote(name) + "\\\"?)\\s*:\\s*\\{").matcher(block);
