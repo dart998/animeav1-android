@@ -19,6 +19,8 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
@@ -71,6 +73,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     @SuppressLint({"SetJavaScriptEnabled","JavascriptInterface"})
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);setContentView(R.layout.activity_main);getWindow().setStatusBarColor(AppUi.BG);getWindow().setNavigationBarColor(AppUi.BG);
+        hideSystemNavigation();
         web=findViewById(R.id.web_view);nativeContent=findViewById(R.id.native_content);progress=findViewById(R.id.page_progress);fullscreen=findViewById(R.id.fullscreen_video);navigation=findViewById(R.id.bottom_navigation);
         store=new DownloadStore(this);store.recoverInterrupted();setupNavigation();setupWebView();setupNativeSwipe();registerUpdates();observeNetwork();
         String requested=getIntent().getStringExtra(EXTRA_URL);
@@ -80,6 +83,27 @@ public final class MainActivity extends Activity implements DownloadsView.Action
 
     private void setupNavigation(){
         for(int i=0;i<LABELS.length;i++){final int index=i;Button b=new Button(this);b.setText(LABELS[i]);b.setTextSize(11);b.setAllCaps(false);b.setGravity(Gravity.CENTER);b.setPadding(0,2,0,2);b.setBackgroundColor(android.graphics.Color.TRANSPARENT);b.setOnClickListener(v->select(index));navigation.addView(b,new LinearLayout.LayoutParams(0,-1,1));navButtons[i]=b;}markSelected(0);
+    }
+
+    /**
+     * Keeps Android's navigation bar out of the way while preserving the
+     * platform gesture that reveals it temporarily from the bottom edge.
+     */
+    @SuppressWarnings("deprecation")
+    private void hideSystemNavigation(){
+        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R){
+            WindowInsetsController controller=getWindow().getInsetsController();
+            if(controller!=null){
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.navigationBars());
+            }
+        }else{
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            |View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            |View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            |View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled") private void setupWebView(){
@@ -148,6 +172,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void registerUpdates(){IntentFilter f=new IntentFilter(DownloadService.ACTION_UPDATED);if(Build.VERSION.SDK_INT>=33)registerReceiver(updates,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,f);}
 
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String url=intent.getStringExtra(EXTRA_URL);if(url!=null){if(isOnline()){showWeb();web.loadUrl(url);}else showDownloads();}}
+    @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus)hideSystemNavigation();}
     @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
     @Override public void onBackPressed(){if(customView!=null){exitFullscreen();return;}if(selected==1){if(isOnline())select(0);else showOffline();return;}if(offlineLanding){super.onBackPressed();return;}if(web.canGoBack())web.goBack();else super.onBackPressed();}
     private void exitFullscreen(){if(customView==null)return;fullscreen.removeView(customView);fullscreen.setVisibility(View.GONE);customView=null;web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);if(customCallback!=null)customCallback.onCustomViewHidden();customCallback=null;}
