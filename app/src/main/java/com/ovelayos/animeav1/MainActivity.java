@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Insets;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -31,8 +32,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -49,13 +50,15 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     static final String EXTRA_URL="open_url";
     private static final int NOTIFICATION_PERMISSION=44;
     private static final String[] URLS={AnimeAv1Client.ORIGIN+"/", "", AnimeAv1Client.ORIGIN+"/horario", AnimeAv1Client.ORIGIN+"/cuenta/listas", AnimeAv1Client.ORIGIN+"/cuenta"};
-    private static final String[] LABELS={"⌂\nInicio","⇩\nDescargas","◷\nHorario","♡\nMis Listas","●\nMi cuenta"};
+    private static final String[] LABELS={"Inicio","Descargas","Horario","Mis Listas","Mi cuenta"};
+    private static final int[] NAV_ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_downloads,R.drawable.ic_nav_schedule,R.drawable.ic_nav_lists,R.drawable.ic_nav_account};
 
     private WebView web;
     private FrameLayout nativeContent,fullscreen;
     private ProgressBar progress;
-    private LinearLayout navigation;
-    private final Button[] navButtons=new Button[5];
+    private LinearLayout root,navigation;
+    private final ImageView[] navIcons=new ImageView[5];
+    private final TextView[] navLabels=new TextView[5];
     private DownloadsView downloadsView;
     private DownloadStore store;
     private final ExecutorService background=Executors.newSingleThreadExecutor();
@@ -73,8 +76,8 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     @SuppressLint({"SetJavaScriptEnabled","JavascriptInterface"})
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);setContentView(R.layout.activity_main);getWindow().setStatusBarColor(AppUi.BG);getWindow().setNavigationBarColor(AppUi.BG);
-        hideSystemNavigation();
-        web=findViewById(R.id.web_view);nativeContent=findViewById(R.id.native_content);progress=findViewById(R.id.page_progress);fullscreen=findViewById(R.id.fullscreen_video);navigation=findViewById(R.id.bottom_navigation);
+        root=findViewById(R.id.root);web=findViewById(R.id.web_view);nativeContent=findViewById(R.id.native_content);progress=findViewById(R.id.page_progress);fullscreen=findViewById(R.id.fullscreen_video);navigation=findViewById(R.id.bottom_navigation);
+        applySystemBarInsets();hideSystemNavigation();
         store=new DownloadStore(this);store.recoverInterrupted();setupNavigation();setupWebView();setupNativeSwipe();registerUpdates();observeNetwork();
         String requested=getIntent().getStringExtra(EXTRA_URL);
         if(state!=null)web.restoreState(state);else if(isOnline())web.loadUrl(requested==null?URLS[0]:requested);else showOffline();
@@ -82,7 +85,25 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     }
 
     private void setupNavigation(){
-        for(int i=0;i<LABELS.length;i++){final int index=i;Button b=new Button(this);b.setText(LABELS[i]);b.setTextSize(11);b.setAllCaps(false);b.setGravity(Gravity.CENTER);b.setPadding(0,2,0,2);b.setBackgroundColor(android.graphics.Color.TRANSPARENT);b.setOnClickListener(v->select(index));navigation.addView(b,new LinearLayout.LayoutParams(0,-1,1));navButtons[i]=b;}markSelected(0);
+        for(int i=0;i<LABELS.length;i++){
+            final int index=i;
+            LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,7),0,AppUi.dp(this,5));item.setBackgroundColor(android.graphics.Color.TRANSPARENT);item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));
+            ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,29),AppUi.dp(this,29)));
+            TextView label=AppUi.text(this,LABELS[i],12,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,0,1);labelParams.topMargin=AppUi.dp(this,3);item.addView(label,labelParams);
+            navigation.addView(item,new LinearLayout.LayoutParams(0,-1,1));navIcons[i]=icon;navLabels[i]=label;
+        }
+        markSelected(0);
+    }
+
+    private void applySystemBarInsets(){
+        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R){
+            root.setOnApplyWindowInsetsListener((view,insets)->{
+                Insets safe=insets.getInsets(WindowInsets.Type.statusBars()|WindowInsets.Type.displayCutout());
+                view.setPadding(safe.left,safe.top,safe.right,0);
+                return insets;
+            });
+            root.requestApplyInsets();
+        }
     }
 
     /**
@@ -132,7 +153,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void showWeb(){offlineLanding=false;nativeContent.setVisibility(View.GONE);web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);}
     private void showDownloads(){selected=1;markSelected(1);offlineLanding=false;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();downloadsView=new DownloadsView(this,this);nativeContent.addView(downloadsView,new FrameLayout.LayoutParams(-1,-1));refreshDownloads();}
     private void showOffline(){selected=0;markSelected(0);offlineLanding=true;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();nativeContent.addView(new OfflineLandingView(this,this::showDownloads,()->{if(isOnline()){offlineLanding=false;select(0);}else Toast.makeText(this,"Sigue sin haber conexión",Toast.LENGTH_SHORT).show();}),new FrameLayout.LayoutParams(-1,-1));}
-    private void markSelected(int index){for(int i=0;i<navButtons.length;i++)navButtons[i].setTextColor(i==index?AppUi.BRAND:AppUi.MUTED);}
+    private void markSelected(int index){for(int i=0;i<navLabels.length;i++){int color=i==index?AppUi.BRAND:AppUi.MUTED;navLabels[i].setTextColor(color);navIcons[i].setColorFilter(color);}}
     private void markForUrl(String url){if(url==null)return;if(url.equals(URLS[0])){selected=0;markSelected(0);}else if(url.contains("/horario")){selected=2;markSelected(2);}else if(url.contains("/cuenta/listas")){selected=3;markSelected(3);}else if(url.matches("https://animeav1\\.com/cuenta/?(?:\\?.*)?")){selected=4;markSelected(4);}}
 
     private void inject(){Episode e=parseEpisode(web.getUrl());DownloadEntry local=e==null?null:store.get(e.slug,e.number);web.evaluateJavascript(SiteScripts.install(local!=null&&local.isPlayable()?DownloadEntry.COMPLETED:""),null);}
