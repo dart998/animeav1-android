@@ -16,7 +16,11 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +32,7 @@ import javax.crypto.spec.SecretKeySpec;
 final class MegaClient {
     private static final Pattern PROVIDER = Pattern.compile("[\\\"']?server[\\\"']?\\s*:\\s*[\\\"']Mega[\\\"']\\s*,\\s*[\\\"']?url[\\\"']?\\s*:\\s*[\\\"']([^\\\"']+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern LINK = Pattern.compile("https?://(?:www\\.)?mega\\.(?:nz|co\\.nz)/[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUDIO_LANGUAGE = Pattern.compile("(?:[\\\"']?(?:language|lang|audio|version|type|label|name)[\\\"']?\\s*[:=]\\s*[\\\"']?(SUB|DUB)[\\\"']?|(?:^|[,{])\\s*[\\\"']?(SUB|DUB)[\\\"']?\\s*:|>\\s*(SUB|DUB)\\s*<)", Pattern.CASE_INSENSITIVE);
 
     interface Control {
         boolean cancelled();
@@ -36,12 +41,18 @@ final class MegaClient {
     }
 
     static Link fromHtml(String html) {
-        String decoded = decode(html);
-        Matcher preferred = PROVIDER.matcher(decoded);
-        while (preferred.find()) { Link link = parse(preferred.group(1)); if (link != null) return link; }
-        Matcher any = LINK.matcher(decoded);
-        while (any.find()) { Link link = parse(any.group()); if (link != null) return link; }
+        for(String url:orderedUrlsFromHtml(html)){Link link=parse(url);if(link!=null)return link;}
         return null;
+    }
+
+    static List<String> orderedUrlsFromHtml(String html){
+        String decoded=decode(html);List<Marker> markers=new ArrayList<>();Matcher audio=AUDIO_LANGUAGE.matcher(decoded);
+        while(audio.find()){String language="";for(int i=1;i<=audio.groupCount();i++)if(audio.group(i)!=null){language=audio.group(i).toUpperCase(Locale.US);break;}if(!language.isEmpty())markers.add(new Marker(audio.start(),language));}
+        List<Candidate> candidates=new ArrayList<>();Matcher provider=PROVIDER.matcher(decoded);while(provider.find())candidates.add(new Candidate(provider.start(),provider.group(1)));
+        if(candidates.isEmpty()){Matcher any=LINK.matcher(decoded);while(any.find())candidates.add(new Candidate(any.start(),any.group()));}
+        List<String> sub=new ArrayList<>(),unknown=new ArrayList<>(),dub=new ArrayList<>();Set<String> seen=new HashSet<>();
+        for(Candidate candidate:candidates){String raw=decode(candidate.url);if(!seen.add(raw))continue;String language="";for(Marker marker:markers){if(marker.position>candidate.position)break;language=marker.language;}if("SUB".equals(language))sub.add(raw);else if("DUB".equals(language))dub.add(raw);else unknown.add(raw);}
+        ArrayList<String> ordered=new ArrayList<>(sub.size()+unknown.size()+dub.size());ordered.addAll(sub);ordered.addAll(unknown);ordered.addAll(dub);return ordered;
     }
 
     static Link parse(String value) {
@@ -140,6 +151,8 @@ final class MegaClient {
 
     private static String decode(String value) { return text(value).replace("\\/", "/").replace("\\u002F", "/").replace("\\u003A", ":").replace("\\u0023", "#").replace("&amp;", "&"); }
     private static String text(String value) { return value == null ? "" : value; }
+    private static final class Marker { final int position; final String language; Marker(int position,String language){this.position=position;this.language=language;} }
+    private static final class Candidate { final int position; final String url; Candidate(int position,String url){this.position=position;this.url=url;} }
     static final class Link { final String original, handle, key; Link(String original, String handle, String key){this.original=original;this.handle=handle;this.key=key;} }
     static final class Cancelled extends Exception { }
 }

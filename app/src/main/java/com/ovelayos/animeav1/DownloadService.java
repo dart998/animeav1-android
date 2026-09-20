@@ -95,8 +95,8 @@ public final class DownloadService extends Service {
         try {
             entry.state=DownloadEntry.RESOLVING; entry.error=""; store.save(entry); broadcast(entry); update(entry, "Resolviendo enlace…");
             String html = AnimeAv1Client.get(entry.pageUrl, android.webkit.CookieManager.getInstance().getCookie(AnimeAv1Client.ORIGIN));
-            MegaClient.Link link = MegaClient.parse(entry.sourceUrl);
-            if (link == null) link = MegaClient.fromHtml(html);
+            MegaClient.Link link = MegaClient.fromHtml(html);
+            if (link == null) link = MegaClient.parse(entry.sourceUrl);
             if (link == null) throw new IllegalStateException("No se encontró un enlace público de Mega");
             entry.sourceUrl=link.original; entry.state=DownloadEntry.DOWNLOADING; entry.localPath=fileFor(entry).getAbsolutePath(); store.save(entry); broadcast(entry);
             final DownloadEntry current=entry;
