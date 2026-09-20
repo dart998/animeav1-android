@@ -28,7 +28,10 @@ final class AnimeAv1Client {
 
     static List<LibraryItem> library(String cookie) throws Exception {
         if (cookie == null || cookie.trim().isEmpty()) throw new IllegalStateException("Inicia sesión para consultar Mis Listas");
-        String html = get(ORIGIN + "/cuenta/listas", cookie);
+        return parseLibrary(get(ORIGIN + "/cuenta/listas", cookie));
+    }
+
+    static List<LibraryItem> parseLibrary(String html) {
         int marker = html.indexOf("libraryEntries:");
         if (marker < 0) throw new IllegalStateException("La sesión no contiene la biblioteca de AnimeAV1");
         int start = html.indexOf('[', marker);

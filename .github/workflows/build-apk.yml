@@ -51,13 +51,13 @@ jobs:
           test -n "$ANDROID_KEYSTORE_BASE64"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/animeav1-release.jks"
 
-      - name: Build signed release APK
+      - name: Test and build signed release APK
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/animeav1-release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle assembleRelease
+        run: gradle testReleaseUnitTest assembleRelease
 
       - name: Prepare versioned APK
         run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.version.outputs.apk }}"
