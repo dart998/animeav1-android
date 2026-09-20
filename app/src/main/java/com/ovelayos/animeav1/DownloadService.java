@@ -48,6 +48,9 @@ public final class DownloadService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        DownloadStore recovered = new DownloadStore(this);
+        recovered.recoverInterrupted();
+        recovered.close();
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "Descargas AnimeAV1", NotificationManager.IMPORTANCE_LOW);
             channel.setDescription("Progreso de la cola de episodios");
