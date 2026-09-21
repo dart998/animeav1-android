@@ -67,6 +67,11 @@ jobs:
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "${{ steps.version.outputs.apk }}"
 
+      - name: Prepare release notes
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: bash scripts/release-notes.sh "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/release-notes.md"
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -82,6 +87,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "AnimeAV1 $VERSION" --notes "APK Android firmada de AnimeAV1 versión $VERSION. Esta y las versiones posteriores usan una clave de firma estable para permitir actualizaciones normales sin conflictos de paquete."
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "AnimeAV1 $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release edit "$TAG" --title "AnimeAV1 $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
           gh release upload "$TAG" "$APK" --clobber

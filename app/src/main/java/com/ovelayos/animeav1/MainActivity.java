@@ -53,6 +53,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private static final String[] URLS={AnimeAv1Client.ORIGIN+"/", "", AnimeAv1Client.ORIGIN+"/horario", AnimeAv1Client.ORIGIN+"/cuenta/listas", AnimeAv1Client.ORIGIN+"/cuenta"};
     private static final String[] LABELS={"Inicio","Descargas","Horario","Mis Listas","Mi cuenta"};
     private static final int[] NAV_ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_downloads,R.drawable.ic_nav_schedule,R.drawable.ic_nav_lists,R.drawable.ic_nav_account};
+    private static final int NAV_SIZE_DP=60;
 
     private WebView web;
     private FrameLayout content,nativeContent,fullscreen;
@@ -89,9 +90,9 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void setupNavigation(){
         for(int i=0;i<LABELS.length;i++){
             final int index=i;
-            LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,4),0,AppUi.dp(this,3));item.setBackgroundColor(android.graphics.Color.TRANSPARENT);item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));
-            ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,25),AppUi.dp(this,25)));
-            TextView label=AppUi.text(this,LABELS[i],11,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,0,1);labelParams.topMargin=AppUi.dp(this,2);item.addView(label,labelParams);
+            LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,2),0,AppUi.dp(this,2));item.setBackgroundColor(android.graphics.Color.TRANSPARENT);item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));
+            ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,24),AppUi.dp(this,24)));
+            TextView label=AppUi.text(this,LABELS[i],11,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,-2);labelParams.topMargin=AppUi.dp(this,1);item.addView(label,labelParams);
             LinearLayout.LayoutParams itemParams=navigation.getOrientation()==LinearLayout.VERTICAL?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0,-1,1);
             navigation.addView(item,itemParams);navIcons[i]=icon;navLabels[i]=label;
         }
@@ -115,7 +116,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
         root.setOrientation(landscape?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
         navigation.setOrientation(landscape?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
         content.setLayoutParams(landscape?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));
-        navigation.setLayoutParams(landscape?new LinearLayout.LayoutParams(AppUi.dp(this,68),-1):new LinearLayout.LayoutParams(-1,AppUi.dp(this,68)));
+        navigation.setLayoutParams(landscape?new LinearLayout.LayoutParams(AppUi.dp(this,NAV_SIZE_DP),-1):new LinearLayout.LayoutParams(-1,AppUi.dp(this,NAV_SIZE_DP)));
         for(int i=0;i<navigation.getChildCount();i++)navigation.getChildAt(i).setLayoutParams(landscape?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0,-1,1));
         navigation.requestLayout();
     }
@@ -231,8 +232,6 @@ public final class MainActivity extends Activity implements DownloadsView.Action
 
     private void syncLibrary(boolean force){long now=System.currentTimeMillis();if(!isOnline()||(!force&&now-lastLibrarySync<5*60_000))return;lastLibrarySync=now;String cookie=CookieManager.getInstance().getCookie(AnimeAv1Client.ORIGIN);background.execute(()->{try{int removed=0;for(AnimeAv1Client.LibraryItem item:AnimeAv1Client.library(cookie))removed+=store.deleteWatched(item.slug,item.watched);if(removed>0)runOnUiThread(()->{refreshDownloads();updatePageIntegration();});}catch(Exception ignored){}});}
 
-    @Override public void swipe(int direction){select((selected+direction+5)%5);}
-
     private void observeNetwork(){connectivity=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);online=isOnline();networkCallback=new ConnectivityManager.NetworkCallback(){@Override public void onAvailable(Network network){refreshConnectivity();}@Override public void onCapabilitiesChanged(Network network,NetworkCapabilities capabilities){refreshConnectivity();}@Override public void onLost(Network network){refreshConnectivity();}};try{connectivity.registerDefaultNetworkCallback(networkCallback);}catch(Exception ignored){}}
     private void refreshConnectivity(){runOnUiThread(()->{boolean was=online;online=isOnline();if(!was&&online&&offlineLanding)select(0);});}
     private boolean isOnline(){ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network n=cm.getActiveNetwork();NetworkCapabilities c=n==null?null:cm.getNetworkCapabilities(n);return c!=null&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);}
@@ -256,6 +255,5 @@ public final class MainActivity extends Activity implements DownloadsView.Action
         @JavascriptInterface public void download(String slug,int episode,String title,String page,String source){runOnUiThread(()->enqueue(slug,episode,title,page,source,"single",""));}
         @JavascriptInterface public void downloadUnwatched(String slug,String title,int published){runOnUiThread(()->MainActivity.this.downloadUnwatched(slug,title,published));}
         @JavascriptInterface public void playLocal(String slug,int episode){runOnUiThread(()->{DownloadEntry e=store.get(slug,episode);if(e!=null)play(e);});}
-        @JavascriptInterface public void swipe(int direction){runOnUiThread(()->MainActivity.this.swipe(direction));}
     }
 }

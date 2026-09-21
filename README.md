@@ -5,7 +5,6 @@ Cliente Android híbrido de AnimeAV1. Conserva la web, la sesión y sus páginas
 ## Funciones
 
 - Navegación inferior permanente: Inicio, Descargas, Horario, Mis Listas y Mi cuenta.
-- Cambio de sección por gesto lateral, evitando reproductores, controles y zonas con desplazamiento horizontal.
 - Descarga individual desde el botón de cada episodio y descarga de capítulos no vistos desde una serie.
 - Lotes para todas las series en estado `Viendo`, consultando el progreso real de Mis Listas.
 - Cola persistente de una sola descarga, sin duplicados, con estados, cancelación y reintento.
@@ -15,6 +14,8 @@ Cliente Android híbrido de AnimeAV1. Conserva la web, la sesión y sus páginas
 - Limpieza automática de copias locales cuando la biblioteca las marca como vistas.
 - Notificaciones de progreso, cancelar y ver.
 - Versión del footer generada desde `BuildConfig.VERSION_NAME`.
+
+El [resumen completo de funcionalidades](FEATURES.md) se mantiene separado del [historial de cambios por versión](CHANGELOG.md).
 
 Los vídeos se guardan en el directorio privado externo de la aplicación (`Android/data/com.ovelayos.animeav1/files/Movies/AnimeAV1`). Desinstalar la aplicación puede eliminar ese contenido.
 
@@ -35,4 +36,4 @@ Requiere JDK 17, Android SDK 36 y Gradle 9.3.1:
 gradle assembleDebug
 ```
 
-El workflow de GitHub Actions compila y firma `assembleRelease`. En `main` crea la release correspondiente a `versionName`.
+El workflow de GitHub Actions compila y firma `assembleRelease`. En `main` crea la release correspondiente a `versionName` usando su sección de `CHANGELOG.md` y el resumen vigente de `FEATURES.md`. La publicación falla si falta el changelog de esa versión.

@@ -5,9 +5,7 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -18,13 +16,11 @@ import java.util.List;
 import java.util.Locale;
 
 final class DownloadsView extends LinearLayout {
-    interface Actions { void play(DownloadEntry e); void cancel(DownloadEntry e); void delete(DownloadEntry e); void retry(DownloadEntry e); void batch(); void swipe(int direction); }
+    interface Actions { void play(DownloadEntry e); void cancel(DownloadEntry e); void delete(DownloadEntry e); void retry(DownloadEntry e); void batch(); }
 
     private final LinearLayout list;
     private final TextView summary;
     private final Actions actions;
-    private float swipeStartX,swipeStartY;
-    private boolean swipeActive,swipeBlocked;
 
     DownloadsView(Context context,Actions actions){
         super(context);this.actions=actions;setOrientation(VERTICAL);setBackgroundColor(AppUi.BG);setPadding(AppUi.dp(context,20),AppUi.dp(context,22),AppUi.dp(context,20),0);
@@ -41,28 +37,6 @@ final class DownloadsView extends LinearLayout {
 
         ScrollView scroll=new ScrollView(context);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);scroll.setPadding(0,0,0,AppUi.dp(context,22));
         list=new LinearLayout(context);list.setOrientation(VERTICAL);scroll.addView(list,new ScrollView.LayoutParams(-1,-2));addView(scroll,new LayoutParams(-1,0,1));
-    }
-
-    @Override public boolean onInterceptTouchEvent(MotionEvent event){
-        switch(event.getActionMasked()){
-            case MotionEvent.ACTION_DOWN:
-                swipeStartX=event.getX();swipeStartY=event.getY();swipeActive=false;swipeBlocked=touchesInteractive(this,event.getX(),event.getY());return false;
-            case MotionEvent.ACTION_MOVE:
-                if(swipeBlocked)return false;float dx=event.getX()-swipeStartX,dy=event.getY()-swipeStartY;
-                if(Math.abs(dx)>AppUi.dp(getContext(),24)&&Math.abs(dx)>Math.abs(dy)*1.7f){swipeActive=true;return true;}return false;
-            case MotionEvent.ACTION_CANCEL:swipeActive=false;swipeBlocked=false;return false;
-            default:return false;
-        }
-    }
-
-    @Override public boolean onTouchEvent(MotionEvent event){
-        if(!swipeActive)return super.onTouchEvent(event);
-        if(event.getActionMasked()==MotionEvent.ACTION_UP){float dx=event.getX()-swipeStartX;if(Math.abs(dx)>AppUi.dp(getContext(),72))actions.swipe(dx<0?1:-1);swipeActive=false;swipeBlocked=false;return true;}
-        if(event.getActionMasked()==MotionEvent.ACTION_CANCEL){swipeActive=false;swipeBlocked=false;}return true;
-    }
-
-    private boolean touchesInteractive(ViewGroup parent,float x,float y){
-        for(int i=parent.getChildCount()-1;i>=0;i--){View child=parent.getChildAt(i);if(child.getVisibility()!=View.VISIBLE)continue;float localX=x+parent.getScrollX()-child.getLeft(),localY=y+parent.getScrollY()-child.getTop();if(localX<0||localY<0||localX>=child.getWidth()||localY>=child.getHeight())continue;if(child instanceof ViewGroup&&touchesInteractive((ViewGroup)child,localX,localY))return true;if(child.isClickable()||child.isLongClickable()||child.canScrollHorizontally(-1)||child.canScrollHorizontally(1))return true;}return false;
     }
 
     void render(List<DownloadEntry> entries){
