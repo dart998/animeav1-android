@@ -77,6 +77,8 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private WebChromeClient.CustomViewCallback customCallback;
     private long lastLibrarySync;
     private boolean watchingListRequested;
+    private boolean accountRequested;
+    private int accountOpenAttempts;
     private boolean tvMode;
 
     private final BroadcastReceiver updates=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){refreshDownloads();updatePageIntegration();}};
@@ -190,9 +192,9 @@ public final class MainActivity extends Activity implements DownloadsView.Action
         web.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView view,String url,Bitmap icon){if(AdBlocker.shouldBlock(Uri.parse(url))){view.stopLoading();if(view.canGoBack())view.goBack();else view.loadUrl(URLS[0]);return;}progress.setVisibility(View.VISIBLE);showWeb();markForUrl(url);}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){return AdBlocker.shouldBlock(request.getUrl())?AdBlocker.emptyResponse():super.shouldInterceptRequest(view,request);}
-            @Override public void onPageFinished(WebView view,String url){CookieManager.getInstance().flush();view.evaluateJavascript(AdBlocker.cleanupScript(),null);inject();if(watchingListRequested&&url!=null&&url.contains("/cuenta/listas"))openWatchingList();syncLibrary(false);}
+            @Override public void onPageFinished(WebView view,String url){CookieManager.getInstance().flush();view.evaluateJavascript(AdBlocker.cleanupScript(),null);inject();if(watchingListRequested&&url!=null&&url.contains("/cuenta/listas"))openWatchingList();if(accountRequested){accountRequested=false;openAccount();}syncLibrary(false);}
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame()&&!isOnline())showOffline();}
-            @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){if(request.isForMainFrame()&&response.getStatusCode()==401&&request.getUrl()!=null&&request.getUrl().getPath()!=null&&request.getUrl().getPath().startsWith("/cuenta")){view.post(()->view.loadUrl(AnimeAv1Client.ORIGIN+"/auth"));}}
+            @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){if(request.isForMainFrame()&&response.getStatusCode()==401&&request.getUrl()!=null&&request.getUrl().getPath()!=null&&request.getUrl().getPath().startsWith("/cuenta")){accountRequested=true;accountOpenAttempts=0;view.post(()->view.loadUrl(URLS[0]));}}
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri uri=request.getUrl();if(AdBlocker.shouldBlock(uri))return true;if(isDiscord(uri)){try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}String scheme=uri.getScheme();if("http".equalsIgnoreCase(scheme)||"https".equalsIgnoreCase(scheme))return false;try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}
         });
     }
@@ -202,10 +204,12 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void select(int index){
         if(index==1){showDownloads();return;}
         if(!isOnline()){showOffline();Toast.makeText(this,"Esta sección necesita conexión",Toast.LENGTH_SHORT).show();return;}
+        if(index==4){selected=index;markSelected(index);showWeb();accountOpenAttempts=0;openAccount();return;}
         if(index==3)watchingListRequested=true;
         selected=index;markSelected(index);showWeb();String target=URLS[index];if(!target.equals(web.getUrl()))web.loadUrl(target);else if(index==3)openWatchingList();
     }
     private void openWatchingList(){watchingListRequested=false;web.evaluateJavascript(SiteScripts.openWatchingList(),null);}
+    private void openAccount(){web.evaluateJavascript(SiteScripts.openAccount(),result->{if("true".equals(result)){accountRequested=false;accountOpenAttempts=0;return;}if(!URLS[0].equals(web.getUrl())){accountRequested=true;web.loadUrl(URLS[0]);return;}if(accountOpenAttempts++<12)web.postDelayed(this::openAccount,250);else{accountRequested=false;Toast.makeText(this,"No se ha podido abrir el acceso de AnimeAV1",Toast.LENGTH_SHORT).show();}});}
     private void showWeb(){offlineLanding=false;nativeContent.setVisibility(View.GONE);web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);if(tvMode){setNavigationLeftFocus(web.getId());web.requestFocus();}}
     private void showDownloads(){selected=1;markSelected(1);offlineLanding=false;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();downloadsView=new DownloadsView(this,this);nativeContent.addView(downloadsView,new FrameLayout.LayoutParams(-1,-1));refreshDownloads();if(tvMode){setNavigationLeftFocus(downloadsView.defaultFocusId());downloadsView.focusDefault();}}
     private void showOffline(){selected=0;markSelected(0);offlineLanding=true;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();OfflineLandingView landing=new OfflineLandingView(this,this::showDownloads,()->{if(isOnline()){offlineLanding=false;select(0);}else Toast.makeText(this,"Sigue sin haber conexión",Toast.LENGTH_SHORT).show();});nativeContent.addView(landing,new FrameLayout.LayoutParams(-1,-1));if(tvMode)setNavigationLeftFocus(landing.defaultFocusId());}
