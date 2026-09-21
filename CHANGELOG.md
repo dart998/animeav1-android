@@ -4,6 +4,13 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 
 ## [Sin publicar]
 
+## [2.1.2] - 2026-09-21
+
+### Corregido
+
+- Mi cuenta abre el diálogo oficial de inicio de sesión de AnimeAV1 en lugar de navegar a una ruta protegida que responde 401.
+- El formulario de acceso y la validación Turnstile de Cloudflare participan en la navegación con D-pad en Android TV.
+
 ## [2.1.1] - 2026-09-21
 
 ### Cambios
@@ -105,7 +112,8 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 - Limpieza de archivos locales al detectar episodios vistos en la biblioteca de AnimeAV1.
 - Versión de la aplicación en el footer obtenida desde `BuildConfig.VERSION_NAME`.
 
-[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.1.1...HEAD
+[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.1.2...HEAD
+[2.1.2]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.2
 [2.1.1]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.1
 [2.1.0]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.0
 [2.0.5]: https://github.com/dart998/animeav1-android/releases/tag/v2.0.5
