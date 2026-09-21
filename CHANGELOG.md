@@ -4,6 +4,19 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 
 ## [Sin publicar]
 
+## [2.1.0] - 2026-09-21
+
+### Añadido
+
+- Compatibilidad con Android TV, Google TV y Fire TV en el mismo APK.
+- Entrada en el launcher Leanback con banner propio de AnimeAV1.
+- Navegación mediante mando y D-pad con foco visual en la web, el menú y las vistas locales.
+- Control de reproducción desde el mando: reproducir/pausar y saltos de 10 segundos.
+
+### Cambios
+
+- Interfaz de TV adaptada a visualización a distancia, área segura y orientación horizontal sin alterar las dimensiones de la interfaz móvil.
+
 ## [2.0.5] - 2026-09-21
 
 ### Cambios
@@ -79,7 +92,8 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 - Limpieza de archivos locales al detectar episodios vistos en la biblioteca de AnimeAV1.
 - Versión de la aplicación en el footer obtenida desde `BuildConfig.VERSION_NAME`.
 
-[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.0.5...HEAD
+[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.0
 [2.0.5]: https://github.com/dart998/animeav1-android/releases/tag/v2.0.5
 [2.0.4]: https://github.com/dart998/animeav1-android/releases/tag/v2.0.4
 [2.0.3]: https://github.com/dart998/animeav1-android/releases/tag/v2.0.3

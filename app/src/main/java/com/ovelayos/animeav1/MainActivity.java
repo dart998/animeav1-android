@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Insets;
@@ -19,6 +20,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -54,6 +56,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private static final String[] LABELS={"Inicio","Descargas","Horario","Mis Listas","Mi cuenta"};
     private static final int[] NAV_ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_downloads,R.drawable.ic_nav_schedule,R.drawable.ic_nav_lists,R.drawable.ic_nav_account};
     private static final int NAV_SIZE_DP=60;
+    private static final int TV_NAV_SIZE_DP=104;
 
     private WebView web;
     private FrameLayout content,nativeContent,fullscreen;
@@ -61,6 +64,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private LinearLayout root,navigation;
     private final ImageView[] navIcons=new ImageView[5];
     private final TextView[] navLabels=new TextView[5];
+    private final View[] navItems=new View[5];
     private DownloadsView downloadsView;
     private DownloadStore store;
     private final ExecutorService background=Executors.newSingleThreadExecutor();
@@ -73,12 +77,13 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private WebChromeClient.CustomViewCallback customCallback;
     private long lastLibrarySync;
     private boolean watchingListRequested;
+    private boolean tvMode;
 
     private final BroadcastReceiver updates=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){refreshDownloads();updatePageIntegration();}};
 
     @SuppressLint({"SetJavaScriptEnabled","JavascriptInterface"})
     @Override protected void onCreate(Bundle state){
-        super.onCreate(state);setContentView(R.layout.activity_main);getWindow().setStatusBarColor(AppUi.BG);getWindow().setNavigationBarColor(AppUi.BG);
+        super.onCreate(state);tvMode=AppUi.isTelevision(this);if(tvMode)setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);setContentView(R.layout.activity_main);getWindow().setStatusBarColor(AppUi.BG);getWindow().setNavigationBarColor(AppUi.BG);
         root=findViewById(R.id.root);content=findViewById(R.id.content);web=findViewById(R.id.web_view);nativeContent=findViewById(R.id.native_content);progress=findViewById(R.id.page_progress);fullscreen=findViewById(R.id.fullscreen_video);navigation=findViewById(R.id.bottom_navigation);
         configureNavigation(getResources().getConfiguration());applySystemBarInsets();hideSystemNavigation();
         store=new DownloadStore(this);store.recoverInterrupted();setupNavigation();setupWebView();registerUpdates();observeNetwork();
@@ -90,16 +95,18 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void setupNavigation(){
         for(int i=0;i<LABELS.length;i++){
             final int index=i;
-            LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,2),0,AppUi.dp(this,2));item.setBackgroundColor(android.graphics.Color.TRANSPARENT);item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));
-            ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,24),AppUi.dp(this,24)));
-            TextView label=AppUi.text(this,LABELS[i],11,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,-2);labelParams.topMargin=AppUi.dp(this,1);item.addView(label,labelParams);
+            LinearLayout item=new LinearLayout(this);item.setId(View.generateViewId());item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,tvMode?6:2),0,AppUi.dp(this,tvMode?6:2));item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));AppUi.focusable(item,AppUi.round(this,android.graphics.Color.TRANSPARENT,10),10);item.setOnFocusChangeListener((v,focused)->markSelected(selected));
+            int iconSize=tvMode?30:24;ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,iconSize),AppUi.dp(this,iconSize)));
+            TextView label=AppUi.text(this,LABELS[i],tvMode?14:11,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,-2);labelParams.topMargin=AppUi.dp(this,tvMode?5:1);item.addView(label,labelParams);
             LinearLayout.LayoutParams itemParams=navigation.getOrientation()==LinearLayout.VERTICAL?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0,-1,1);
-            navigation.addView(item,itemParams);navIcons[i]=icon;navLabels[i]=label;
+            navigation.addView(item,itemParams);navItems[i]=item;navIcons[i]=icon;navLabels[i]=label;
         }
+        if(tvMode){for(int i=0;i<navItems.length;i++){navItems[i].setNextFocusUpId(navItems[Math.max(0,i-1)].getId());navItems[i].setNextFocusDownId(navItems[Math.min(navItems.length-1,i+1)].getId());navItems[i].setNextFocusLeftId(web.getId());}web.setNextFocusRightId(navItems[0].getId());web.setFocusable(true);web.setFocusableInTouchMode(false);web.requestFocus();}
         markSelected(0);
     }
 
     private void applySystemBarInsets(){
+        if(tvMode){int safe=AppUi.dp(this,24);root.setPadding(safe,safe,safe,safe);return;}
         if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R){
             root.setOnApplyWindowInsetsListener((view,insets)->{
                 if(customView!=null){view.setPadding(0,0,0,0);return insets;}
@@ -116,7 +123,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
         root.setOrientation(landscape?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
         navigation.setOrientation(landscape?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
         content.setLayoutParams(landscape?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));
-        navigation.setLayoutParams(landscape?new LinearLayout.LayoutParams(AppUi.dp(this,NAV_SIZE_DP),-1):new LinearLayout.LayoutParams(-1,AppUi.dp(this,NAV_SIZE_DP)));
+        int navSize=tvMode?TV_NAV_SIZE_DP:NAV_SIZE_DP;navigation.setLayoutParams(landscape?new LinearLayout.LayoutParams(AppUi.dp(this,navSize),-1):new LinearLayout.LayoutParams(-1,AppUi.dp(this,navSize)));
         for(int i=0;i<navigation.getChildCount();i++)navigation.getChildAt(i).setLayoutParams(landscape?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0,-1,1));
         navigation.requestLayout();
     }
@@ -167,11 +174,11 @@ public final class MainActivity extends Activity implements DownloadsView.Action
             WindowInsetsController controller=getWindow().getInsetsController();
             if(controller!=null){controller.show(WindowInsets.Type.statusBars());controller.hide(WindowInsets.Type.navigationBars());}
         }else hideSystemNavigation();
-        root.requestApplyInsets();
+        applySystemBarInsets();root.requestApplyInsets();
     }
 
     @SuppressLint("SetJavaScriptEnabled") private void setupWebView(){
-        WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setMediaPlaybackRequiresUserGesture(false);s.setJavaScriptCanOpenWindowsAutomatically(false);s.setSupportMultipleWindows(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setUserAgentString(s.getUserAgentString()+" AnimeAV1Android/"+BuildConfig.VERSION_NAME);
+        WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setMediaPlaybackRequiresUserGesture(false);s.setJavaScriptCanOpenWindowsAutomatically(false);s.setSupportMultipleWindows(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setUserAgentString(s.getUserAgentString()+" AnimeAV1Android/"+BuildConfig.VERSION_NAME);if(tvMode){s.setTextZoom(115);s.setUseWideViewPort(true);s.setLoadWithOverviewMode(true);}
         CookieManager cookies=CookieManager.getInstance();cookies.setAcceptCookie(true);cookies.setAcceptThirdPartyCookies(web,true);web.addJavascriptInterface(new Bridge(),"AnimeAV1Android");
         web.setDownloadListener((url,userAgent,contentDisposition,mimeType,length)->{Episode episode=parseEpisode(web.getUrl());if(episode!=null)enqueue(episode.slug,episode.number,web.getTitle(),web.getUrl(),url,"single","");});
         web.setWebChromeClient(new WebChromeClient(){
@@ -198,13 +205,14 @@ public final class MainActivity extends Activity implements DownloadsView.Action
         selected=index;markSelected(index);showWeb();String target=URLS[index];if(!target.equals(web.getUrl()))web.loadUrl(target);else if(index==3)openWatchingList();
     }
     private void openWatchingList(){watchingListRequested=false;web.evaluateJavascript(SiteScripts.openWatchingList(),null);}
-    private void showWeb(){offlineLanding=false;nativeContent.setVisibility(View.GONE);web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);}
-    private void showDownloads(){selected=1;markSelected(1);offlineLanding=false;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();downloadsView=new DownloadsView(this,this);nativeContent.addView(downloadsView,new FrameLayout.LayoutParams(-1,-1));refreshDownloads();}
-    private void showOffline(){selected=0;markSelected(0);offlineLanding=true;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();nativeContent.addView(new OfflineLandingView(this,this::showDownloads,()->{if(isOnline()){offlineLanding=false;select(0);}else Toast.makeText(this,"Sigue sin haber conexión",Toast.LENGTH_SHORT).show();}),new FrameLayout.LayoutParams(-1,-1));}
-    private void markSelected(int index){for(int i=0;i<navLabels.length;i++){int color=i==index?AppUi.BRAND:AppUi.MUTED;navLabels[i].setTextColor(color);navIcons[i].setColorFilter(color);}}
+    private void showWeb(){offlineLanding=false;nativeContent.setVisibility(View.GONE);web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);if(tvMode){setNavigationLeftFocus(web.getId());web.requestFocus();}}
+    private void showDownloads(){selected=1;markSelected(1);offlineLanding=false;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();downloadsView=new DownloadsView(this,this);nativeContent.addView(downloadsView,new FrameLayout.LayoutParams(-1,-1));refreshDownloads();if(tvMode){setNavigationLeftFocus(downloadsView.defaultFocusId());downloadsView.focusDefault();}}
+    private void showOffline(){selected=0;markSelected(0);offlineLanding=true;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();OfflineLandingView landing=new OfflineLandingView(this,this::showDownloads,()->{if(isOnline()){offlineLanding=false;select(0);}else Toast.makeText(this,"Sigue sin haber conexión",Toast.LENGTH_SHORT).show();});nativeContent.addView(landing,new FrameLayout.LayoutParams(-1,-1));if(tvMode)setNavigationLeftFocus(landing.defaultFocusId());}
+    private void setNavigationLeftFocus(int viewId){for(View item:navItems)if(item!=null)item.setNextFocusLeftId(viewId);}
+    private void markSelected(int index){for(int i=0;i<navLabels.length;i++){int color=i==index||(navItems[i]!=null&&navItems[i].hasFocus())?AppUi.BRAND:AppUi.MUTED;navLabels[i].setTextColor(color);navIcons[i].setColorFilter(color);}if(tvMode&&navItems[index]!=null)web.setNextFocusRightId(navItems[index].getId());}
     private void markForUrl(String url){if(url==null)return;if(url.equals(URLS[0])){selected=0;markSelected(0);}else if(url.contains("/horario")){selected=2;markSelected(2);}else if(url.contains("/cuenta/listas")){selected=3;markSelected(3);}else if(url.matches("https://animeav1\\.com/cuenta/?(?:\\?.*)?")){selected=4;markSelected(4);}}
 
-    private void inject(){Episode e=parseEpisode(web.getUrl());DownloadEntry local=e==null?null:store.get(e.slug,e.number);web.evaluateJavascript(SiteScripts.install(local!=null&&local.isPlayable()?DownloadEntry.COMPLETED:""),null);}
+    private void inject(){Episode e=parseEpisode(web.getUrl());DownloadEntry local=e==null?null:store.get(e.slug,e.number);web.evaluateJavascript(SiteScripts.install(local!=null&&local.isPlayable()?DownloadEntry.COMPLETED:"",tvMode),null);}
     private void updatePageIntegration(){if(web.getVisibility()==View.VISIBLE)inject();}
 
     private void enqueue(String slug,int episode,String title,String page,String source,String origin,String batchId){
@@ -238,6 +246,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void registerUpdates(){IntentFilter f=new IntentFilter(DownloadService.ACTION_UPDATED);if(Build.VERSION.SDK_INT>=33)registerReceiver(updates,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,f);}
 
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String url=intent.getStringExtra(EXTRA_URL);if(url!=null){if(isOnline()){showWeb();web.loadUrl(url);}else showDownloads();}}
+    @Override public boolean dispatchKeyEvent(KeyEvent event){if(tvMode&&customView!=null&&event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0){String command=null;switch(event.getKeyCode()){case KeyEvent.KEYCODE_DPAD_CENTER:case KeyEvent.KEYCODE_ENTER:case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:command="v.paused?v.play():v.pause()";break;case KeyEvent.KEYCODE_MEDIA_PLAY:command="v.play()";break;case KeyEvent.KEYCODE_MEDIA_PAUSE:command="v.pause()";break;case KeyEvent.KEYCODE_DPAD_LEFT:case KeyEvent.KEYCODE_MEDIA_REWIND:command="v.currentTime=Math.max(0,v.currentTime-10)";break;case KeyEvent.KEYCODE_DPAD_RIGHT:case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:command="v.currentTime=Math.min(v.duration||v.currentTime+10,v.currentTime+10)";break;}if(command!=null){web.evaluateJavascript("(function(){var v=document.querySelector('video');if(v){"+command+";}})()",null);return true;}}return super.dispatchKeyEvent(event);}
     @Override public void onConfigurationChanged(Configuration configuration){super.onConfigurationChanged(configuration);configureNavigation(configuration);if(customView!=null)hideAllSystemBars();else{root.requestApplyInsets();hideSystemNavigation();}}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus){if(customView!=null)hideAllSystemBars();else hideSystemNavigation();}}
     @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
@@ -255,5 +264,6 @@ public final class MainActivity extends Activity implements DownloadsView.Action
         @JavascriptInterface public void download(String slug,int episode,String title,String page,String source){runOnUiThread(()->enqueue(slug,episode,title,page,source,"single",""));}
         @JavascriptInterface public void downloadUnwatched(String slug,String title,int published){runOnUiThread(()->MainActivity.this.downloadUnwatched(slug,title,published));}
         @JavascriptInterface public void playLocal(String slug,int episode){runOnUiThread(()->{DownloadEntry e=store.get(slug,episode);if(e!=null)play(e);});}
+        @JavascriptInterface public void focusNavigation(){if(tvMode)runOnUiThread(()->navItems[selected].requestFocus());}
     }
 }

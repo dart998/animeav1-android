@@ -14,10 +14,24 @@ Cliente Android híbrido de AnimeAV1. Conserva la web, la sesión y sus páginas
 - Limpieza automática de copias locales cuando la biblioteca las marca como vistas.
 - Notificaciones de progreso, cancelar y ver.
 - Versión del footer generada desde `BuildConfig.VERSION_NAME`.
+- El mismo APK funciona en móvil, Android TV, Google TV y Fire TV, con navegación mediante mando.
 
 El [resumen completo de funcionalidades](FEATURES.md) se mantiene separado del [historial de cambios por versión](CHANGELOG.md).
 
 Los vídeos se guardan en el directorio privado externo de la aplicación (`Android/data/com.ovelayos.animeav1/files/Movies/AnimeAV1`). Desinstalar la aplicación puede eliminar ese contenido.
+
+## Android TV y Fire TV
+
+La misma APK sirve para móvil, Android TV, Google TV y Fire TV. En televisores se muestra en horizontal, añade foco visible para el D-pad y permite controlar la reproducción con el mando.
+
+Para uso personal puede instalarse manualmente con ADB:
+
+```bash
+adb connect IP_DEL_TELEVISOR
+adb install -r AnimeAV1-vX.Y.Z.apk
+```
+
+La versión mínima es Android 6.0 (API 23), por lo que en Fire TV es compatible con Fire OS 6 y posteriores.
 
 ## Arquitectura
 
