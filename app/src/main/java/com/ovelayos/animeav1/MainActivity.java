@@ -56,7 +56,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private static final String[] LABELS={"Inicio","Descargas","Horario","Mis Listas","Mi cuenta"};
     private static final int[] NAV_ICONS={R.drawable.ic_nav_home,R.drawable.ic_nav_downloads,R.drawable.ic_nav_schedule,R.drawable.ic_nav_lists,R.drawable.ic_nav_account};
     private static final int NAV_SIZE_DP=60;
-    private static final int TV_NAV_SIZE_DP=104;
+    private static final int TV_NAV_SIZE_DP=72;
 
     private WebView web;
     private FrameLayout content,nativeContent,fullscreen;
@@ -95,18 +95,18 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void setupNavigation(){
         for(int i=0;i<LABELS.length;i++){
             final int index=i;
-            LinearLayout item=new LinearLayout(this);item.setId(View.generateViewId());item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,tvMode?6:2),0,AppUi.dp(this,tvMode?6:2));item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));AppUi.focusable(item,AppUi.round(this,android.graphics.Color.TRANSPARENT,10),10);item.setOnFocusChangeListener((v,focused)->markSelected(selected));
-            int iconSize=tvMode?30:24;ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,iconSize),AppUi.dp(this,iconSize)));
-            TextView label=AppUi.text(this,LABELS[i],tvMode?14:11,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,-2);labelParams.topMargin=AppUi.dp(this,tvMode?5:1);item.addView(label,labelParams);
+            LinearLayout item=new LinearLayout(this);item.setId(View.generateViewId());item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(0,AppUi.dp(this,2),0,AppUi.dp(this,2));item.setContentDescription(LABELS[i]);item.setOnClickListener(v->select(index));AppUi.focusable(item,AppUi.round(this,android.graphics.Color.TRANSPARENT,8),8);item.setOnFocusChangeListener((v,focused)->markSelected(selected));
+            int iconSize=tvMode?23:24;ImageView icon=new ImageView(this);icon.setImageResource(NAV_ICONS[i]);icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);item.addView(icon,new LinearLayout.LayoutParams(AppUi.dp(this,iconSize),AppUi.dp(this,iconSize)));
+            TextView label=AppUi.text(this,LABELS[i],11,AppUi.MUTED);label.setGravity(Gravity.CENTER);label.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));LinearLayout.LayoutParams labelParams=new LinearLayout.LayoutParams(-1,-2);labelParams.topMargin=AppUi.dp(this,1);item.addView(label,labelParams);
             LinearLayout.LayoutParams itemParams=navigation.getOrientation()==LinearLayout.VERTICAL?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0,-1,1);
             navigation.addView(item,itemParams);navItems[i]=item;navIcons[i]=icon;navLabels[i]=label;
         }
-        if(tvMode){for(int i=0;i<navItems.length;i++){navItems[i].setNextFocusUpId(navItems[Math.max(0,i-1)].getId());navItems[i].setNextFocusDownId(navItems[Math.min(navItems.length-1,i+1)].getId());navItems[i].setNextFocusLeftId(web.getId());}web.setNextFocusRightId(navItems[0].getId());web.setFocusable(true);web.setFocusableInTouchMode(false);web.requestFocus();}
+        if(tvMode){for(int i=0;i<navItems.length;i++){navItems[i].setNextFocusUpId(navItems[Math.max(0,i-1)].getId());navItems[i].setNextFocusDownId(navItems[Math.min(navItems.length-1,i+1)].getId());navItems[i].setNextFocusLeftId(web.getId());navItems[i].setNextFocusRightId(navItems[i].getId());}web.setNextFocusRightId(navItems[0].getId());web.setFocusable(true);web.setFocusableInTouchMode(false);web.requestFocus();}
         markSelected(0);
     }
 
     private void applySystemBarInsets(){
-        if(tvMode){int safe=AppUi.dp(this,24);root.setPadding(safe,safe,safe,safe);return;}
+        if(tvMode){root.setPadding(0,0,0,0);return;}
         if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R){
             root.setOnApplyWindowInsetsListener((view,insets)->{
                 if(customView!=null){view.setPadding(0,0,0,0);return insets;}
@@ -192,6 +192,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){return AdBlocker.shouldBlock(request.getUrl())?AdBlocker.emptyResponse():super.shouldInterceptRequest(view,request);}
             @Override public void onPageFinished(WebView view,String url){CookieManager.getInstance().flush();view.evaluateJavascript(AdBlocker.cleanupScript(),null);inject();if(watchingListRequested&&url!=null&&url.contains("/cuenta/listas"))openWatchingList();syncLibrary(false);}
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame()&&!isOnline())showOffline();}
+            @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){if(request.isForMainFrame()&&response.getStatusCode()==401&&request.getUrl()!=null&&request.getUrl().getPath()!=null&&request.getUrl().getPath().startsWith("/cuenta")){view.post(()->view.loadUrl(AnimeAv1Client.ORIGIN+"/auth"));}}
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri uri=request.getUrl();if(AdBlocker.shouldBlock(uri))return true;if(isDiscord(uri)){try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}String scheme=uri.getScheme();if("http".equalsIgnoreCase(scheme)||"https".equalsIgnoreCase(scheme))return false;try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}
         });
     }
@@ -210,7 +211,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void showOffline(){selected=0;markSelected(0);offlineLanding=true;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();OfflineLandingView landing=new OfflineLandingView(this,this::showDownloads,()->{if(isOnline()){offlineLanding=false;select(0);}else Toast.makeText(this,"Sigue sin haber conexión",Toast.LENGTH_SHORT).show();});nativeContent.addView(landing,new FrameLayout.LayoutParams(-1,-1));if(tvMode)setNavigationLeftFocus(landing.defaultFocusId());}
     private void setNavigationLeftFocus(int viewId){for(View item:navItems)if(item!=null)item.setNextFocusLeftId(viewId);}
     private void markSelected(int index){for(int i=0;i<navLabels.length;i++){int color=i==index||(navItems[i]!=null&&navItems[i].hasFocus())?AppUi.BRAND:AppUi.MUTED;navLabels[i].setTextColor(color);navIcons[i].setColorFilter(color);}if(tvMode&&navItems[index]!=null)web.setNextFocusRightId(navItems[index].getId());}
-    private void markForUrl(String url){if(url==null)return;if(url.equals(URLS[0])){selected=0;markSelected(0);}else if(url.contains("/horario")){selected=2;markSelected(2);}else if(url.contains("/cuenta/listas")){selected=3;markSelected(3);}else if(url.matches("https://animeav1\\.com/cuenta/?(?:\\?.*)?")){selected=4;markSelected(4);}}
+    private void markForUrl(String url){if(url==null)return;if(url.equals(URLS[0])){selected=0;markSelected(0);}else if(url.contains("/horario")){selected=2;markSelected(2);}else if(url.contains("/cuenta/listas")){selected=3;markSelected(3);}else if(url.contains("/auth")||url.matches("https://animeav1\\.com/cuenta/?(?:\\?.*)?")){selected=4;markSelected(4);}}
 
     private void inject(){Episode e=parseEpisode(web.getUrl());DownloadEntry local=e==null?null:store.get(e.slug,e.number);web.evaluateJavascript(SiteScripts.install(local!=null&&local.isPlayable()?DownloadEntry.COMPLETED:"",tvMode),null);}
     private void updatePageIntegration(){if(web.getVisibility()==View.VISIBLE)inject();}

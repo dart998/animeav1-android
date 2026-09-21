@@ -4,6 +4,19 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 
 ## [Sin publicar]
 
+## [2.1.1] - 2026-09-21
+
+### Cambios
+
+- Menú de TV reducido a 72 dp, sin margen exterior desperdiciado y con proporciones equivalentes al menú original.
+- Icono de Descargas sustituido por una flecha descendente.
+- Ocultado el menú inferior de la web en TV para conservar únicamente la navegación lateral nativa.
+
+### Corregido
+
+- Recorrido del D-pad determinista: el foco prioriza la misma fila o columna y no escapa del menú lateral al pulsar derecha.
+- Mi cuenta redirige a la página de acceso cuando AnimeAV1 devuelve 401 por no existir una sesión iniciada.
+
 ## [2.1.0] - 2026-09-21
 
 ### Añadido
@@ -92,7 +105,8 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 - Limpieza de archivos locales al detectar episodios vistos en la biblioteca de AnimeAV1.
 - Versión de la aplicación en el footer obtenida desde `BuildConfig.VERSION_NAME`.
 
-[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.1.0...HEAD
+[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.1
 [2.1.0]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.0
 [2.0.5]: https://github.com/dart998/animeav1-android/releases/tag/v2.0.5
 [2.0.4]: https://github.com/dart998/animeav1-android/releases/tag/v2.0.4

@@ -36,4 +36,4 @@
 - Navegación Atrás adaptada a páginas web, vistas nativas, contenido externo y reproducción.
 - Icono launcher normal, redondo y adaptativo con la identidad de AnimeAV1.
 - Un único APK compatible con móvil, Android TV, Google TV y Fire TV.
-- Launcher y banner específicos de TV, navegación completa con D-pad y controles multimedia del mando.
+- Launcher y banner específicos de TV, menú lateral compacto con iconos coherentes con la web, navegación lineal con D-pad y controles multimedia del mando.
