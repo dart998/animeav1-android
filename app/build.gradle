@@ -3,15 +3,26 @@ plugins {
 }
 
 android {
-    namespace 'com.ovelayos.animeav1'
+    namespace 'com.dart998.animeav1'
     compileSdk 36
 
     defaultConfig {
-        applicationId 'com.ovelayos.animeav1'
+        applicationId 'com.dart998.animeav1'
         minSdk 23
         targetSdk 36
-        versionCode 20102
-        versionName '2.1.2'
+        versionCode 20200
+        versionName '2.2.0'
+    }
+
+    flavorDimensions += 'device'
+    productFlavors {
+        mobile {
+            dimension 'device'
+        }
+        tv {
+            dimension 'device'
+            applicationIdSuffix '.tv'
+        }
     }
 
     buildFeatures {

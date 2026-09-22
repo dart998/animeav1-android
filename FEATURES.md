@@ -1,5 +1,11 @@
 # Funcionalidades de AnimeAV1 Android
 
+La aplicación se distribuye en dos APK independientes, ambos con versión coordinada.
+
+- El acceso representado anteriormente mediante capas utiliza una flecha descendente coherente en móvil y TV.
+
+## APK móvil
+
 ## Experiencia AnimeAV1
 
 - AnimeAV1 se ejecuta dentro de un WebView conservando su aspecto, navegación, sesión y cookies.
@@ -35,5 +41,11 @@
 - Barra de navegación del sistema oculta normalmente y recuperable de forma temporal desde el borde inferior.
 - Navegación Atrás adaptada a páginas web, vistas nativas, contenido externo y reproducción.
 - Icono launcher normal, redondo y adaptativo con la identidad de AnimeAV1.
-- Un único APK compatible con móvil, Android TV, Google TV y Fire TV.
-- Launcher y banner específicos de TV, menú lateral compacto con iconos coherentes con la web, navegación lineal con D-pad —incluidos formularios y Turnstile— y controles multimedia del mando.
+
+## APK TV
+
+- Aplicación independiente para Android TV, Google TV y Fire TV con identificador `com.dart998.animeav1.tv`.
+- Orientación horizontal y uso de toda la superficie disponible, sin franjas ni barras permanentes de Android.
+- Web de AnimeAV1 sin menú lateral nativo, biblioteca local ni integración de descargas.
+- Aspecto y navegación originales de la web, con bloqueo de anuncios y ventanas emergentes no confiables.
+- Navegación con D-pad, acceso al formulario y Turnstile de Cloudflare y controles multimedia del mando.

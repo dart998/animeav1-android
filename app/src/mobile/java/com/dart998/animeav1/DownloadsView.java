@@ -1,4 +1,4 @@
-package com.ovelayos.animeav1;
+package com.dart998.animeav1;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
@@ -21,7 +21,6 @@ final class DownloadsView extends LinearLayout {
     private final LinearLayout list;
     private final TextView summary;
     private final Actions actions;
-    private final Button batchButton;
 
     DownloadsView(Context context,Actions actions){
         super(context);this.actions=actions;setOrientation(VERTICAL);setBackgroundColor(AppUi.BG);setPadding(AppUi.dp(context,20),AppUi.dp(context,22),AppUi.dp(context,20),0);
@@ -32,16 +31,13 @@ final class DownloadsView extends LinearLayout {
 
         TextView info=AppUi.text(context,"Tu biblioteca local, disponible incluso sin conexión.",14,AppUi.MUTED);LayoutParams infoParams=AppUi.match();infoParams.bottomMargin=AppUi.dp(context,16);addView(info,infoParams);
 
-        batchButton=AppUi.button(context,"Descargar episodios pendientes");batchButton.setId(View.generateViewId());batchButton.setOnClickListener(v->actions.batch());LayoutParams batchParams=new LayoutParams(-1,AppUi.dp(context,AppUi.isTelevision(context)?58:50));batchParams.bottomMargin=AppUi.dp(context,16);addView(batchButton,batchParams);
+        Button batch=AppUi.button(context,"Descargar episodios pendientes");batch.setOnClickListener(v->actions.batch());LayoutParams batchParams=new LayoutParams(-1,AppUi.dp(context,50));batchParams.bottomMargin=AppUi.dp(context,16);addView(batch,batchParams);
 
         summary=AppUi.text(context,"",13,AppUi.MUTED);summary.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));summary.setPadding(AppUi.dp(context,2),0,0,AppUi.dp(context,10));addView(summary,AppUi.match());
 
         ScrollView scroll=new ScrollView(context);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);scroll.setPadding(0,0,0,AppUi.dp(context,22));
         list=new LinearLayout(context);list.setOrientation(VERTICAL);scroll.addView(list,new ScrollView.LayoutParams(-1,-2));addView(scroll,new LayoutParams(-1,0,1));
     }
-
-    void focusDefault(){post(batchButton::requestFocus);}
-    int defaultFocusId(){return batchButton.getId();}
 
     void render(List<DownloadEntry> entries){
         list.removeAllViews();int completed=0,active=0;
@@ -89,7 +85,7 @@ final class DownloadsView extends LinearLayout {
     }
 
     private LayoutParams actionParams(Context c){LayoutParams p=new LayoutParams(0,AppUi.dp(c,42),1);p.leftMargin=AppUi.dp(c,5);p.rightMargin=AppUi.dp(c,5);return p;}
-    private TextView action(Context c,String text,boolean primary,boolean danger,OnClickListener click){int color=danger?AppUi.DANGER:(primary?AppUi.BRAND:AppUi.TEXT);int stroke=danger?Color.argb(150,255,100,124):(primary?Color.argb(160,32,214,199):AppUi.ALT);int fill=danger?Color.argb(16,255,100,124):(primary?Color.argb(16,32,214,199):Color.TRANSPARENT);TextView b=AppUi.text(c,text,AppUi.isTelevision(c)?15:13,color);b.setGravity(Gravity.CENTER);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));AppUi.focusable(b,AppUi.outlined(c,fill,stroke,11),11);b.setOnClickListener(click);return b;}
+    private TextView action(Context c,String text,boolean primary,boolean danger,OnClickListener click){int color=danger?AppUi.DANGER:(primary?AppUi.BRAND:AppUi.TEXT);int stroke=danger?Color.argb(150,255,100,124):(primary?Color.argb(160,32,214,199):AppUi.ALT);int fill=danger?Color.argb(16,255,100,124):(primary?Color.argb(16,32,214,199):Color.TRANSPARENT);TextView b=AppUi.text(c,text,13,color);b.setGravity(Gravity.CENTER);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));b.setBackground(AppUi.outlined(c,fill,stroke,11));b.setOnClickListener(click);return b;}
 
     private int stateColor(DownloadEntry e){if(DownloadEntry.ERROR.equals(e.state)||DownloadEntry.CANCELLED.equals(e.state))return AppUi.DANGER;if(e.isPlayable()||DownloadEntry.DOWNLOADING.equals(e.state))return AppUi.BRAND;return AppUi.MUTED;}
     private String state(DownloadEntry e){

@@ -1,4 +1,4 @@
-package com.ovelayos.animeav1;
+package com.dart998.animeav1;
 
 import android.net.Uri;
 import android.webkit.WebResourceResponse;

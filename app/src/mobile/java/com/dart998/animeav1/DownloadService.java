@@ -1,4 +1,4 @@
-package com.ovelayos.animeav1;
+package com.dart998.animeav1;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -20,9 +20,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class DownloadService extends Service {
-    static final String ACTION_WAKE = "com.ovelayos.animeav1.action.WAKE_DOWNLOADS";
-    static final String ACTION_CANCEL = "com.ovelayos.animeav1.action.CANCEL_DOWNLOAD";
-    static final String ACTION_UPDATED = "com.ovelayos.animeav1.action.DOWNLOAD_UPDATED";
+    static final String ACTION_WAKE = "com.dart998.animeav1.action.WAKE_DOWNLOADS";
+    static final String ACTION_CANCEL = "com.dart998.animeav1.action.CANCEL_DOWNLOAD";
+    static final String ACTION_UPDATED = "com.dart998.animeav1.action.DOWNLOAD_UPDATED";
     static final String EXTRA_SLUG = "slug";
     static final String EXTRA_EPISODE = "episode";
     private static final String CHANNEL = "animeav1_downloads_v2";

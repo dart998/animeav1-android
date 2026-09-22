@@ -1,4 +1,4 @@
-name: Build and Release Android APK
+name: Build and Release Android APKs
 
 on:
   workflow_dispatch:
@@ -41,7 +41,8 @@ jobs:
           test -n "$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "apk=AnimeAV1-v$VERSION.apk" >> "$GITHUB_OUTPUT"
+          echo "mobile=AnimeAV1-Mobile-v$VERSION.apk" >> "$GITHUB_OUTPUT"
+          echo "tv=AnimeAV1-TV-v$VERSION.apk" >> "$GITHUB_OUTPUT"
 
       - name: Restore signing keystore
         shell: bash
@@ -51,39 +52,45 @@ jobs:
           test -n "$ANDROID_KEYSTORE_BASE64"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/animeav1-release.jks"
 
-      - name: Test and build signed release APK
+      - name: Test and build signed APKs
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/animeav1-release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle testDebugUnitTest assembleRelease
+        run: gradle testMobileDebugUnitTest testTvDebugUnitTest assembleMobileRelease assembleTvRelease
 
-      - name: Prepare versioned APK
-        run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.version.outputs.apk }}"
+      - name: Prepare versioned APKs
+        run: |
+          cp app/build/outputs/apk/mobile/release/app-mobile-release.apk "${{ steps.version.outputs.mobile }}"
+          cp app/build/outputs/apk/tv/release/app-tv-release.apk "${{ steps.version.outputs.tv }}"
 
-      - name: Verify APK signature
+      - name: Verify APK signatures
         shell: bash
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "${{ steps.version.outputs.apk }}"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "${{ steps.version.outputs.mobile }}"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "${{ steps.version.outputs.tv }}"
 
       - name: Prepare release notes
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: bash scripts/release-notes.sh "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/release-notes.md"
 
-      - name: Upload workflow artifact
+      - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: animeav1-v${{ steps.version.outputs.version }}-apk
-          path: ${{ steps.version.outputs.apk }}
+          name: animeav1-v${{ steps.version.outputs.version }}-apks
+          path: |
+            ${{ steps.version.outputs.mobile }}
+            ${{ steps.version.outputs.tv }}
 
       - name: Create or update GitHub Release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          APK: ${{ steps.version.outputs.apk }}
+          MOBILE_APK: ${{ steps.version.outputs.mobile }}
+          TV_APK: ${{ steps.version.outputs.tv }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
@@ -91,4 +98,4 @@ jobs:
           else
             gh release edit "$TAG" --title "AnimeAV1 $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
-          gh release upload "$TAG" "$APK" --clobber
+          gh release upload "$TAG" "$MOBILE_APK" "$TV_APK" --clobber
