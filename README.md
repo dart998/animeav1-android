@@ -15,7 +15,7 @@ Cliente Android híbrido de AnimeAV1 distribuido en dos APK: uno para móvil con
 - Notificaciones de progreso, cancelar y ver.
 - Versión del footer generada desde `BuildConfig.VERSION_NAME`.
 
-El [resumen completo de funcionalidades](FEATURES.md) se mantiene separado del [historial de cambios por versión](CHANGELOG.md).
+El [resumen completo de funcionalidades](FEATURES.md) se mantiene separado del [historial de cambios por versión](CHANGELOG.md). Las publicaciones siguen la [política de versionado y Release Candidates](VERSIONING.md).
 
 Los vídeos del APK móvil se guardan en el directorio privado externo de la aplicación (`Android/data/com.dart998.animeav1/files/Movies/AnimeAV1`). Desinstalar la aplicación puede eliminar ese contenido.
 

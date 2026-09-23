@@ -93,9 +93,13 @@ jobs:
           TV_APK: ${{ steps.version.outputs.tv }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          PRERELEASE=false
+          if [[ "$VERSION" == *-rc.* ]]; then
+            PRERELEASE=true
+          fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "AnimeAV1 $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "AnimeAV1 $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease="$PRERELEASE"
           else
-            gh release edit "$TAG" --title "AnimeAV1 $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release edit "$TAG" --title "AnimeAV1 $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease="$PRERELEASE"
           fi
           gh release upload "$TAG" "$MOBILE_APK" "$TV_APK" --clobber

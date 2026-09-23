@@ -4,7 +4,7 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 
 ## [Sin publicar]
 
-## [2.2.0] - 2026-09-22
+## [2.2.0-rc.1] - 2026-09-23
 
 ### Cambios
 
@@ -14,6 +14,10 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 - La variante de TV conserva la web original y añade únicamente bloqueo publicitario, ventanas seguras y navegación con mando.
 - El icono de capas o rombos se sustituye por una flecha de descarga en los menús de ambas variantes.
 - Identificadores sustituidos por `com.dart998.animeav1` para móvil y `com.dart998.animeav1.tv` para TV.
+
+### Corregido
+
+- El menú inferior original de la web también se oculta cuando no hay una sesión iniciada, evitando que aparezca duplicado junto al menú nativo de la aplicación móvil.
 
 ### Importante
 
@@ -127,8 +131,8 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 - Limpieza de archivos locales al detectar episodios vistos en la biblioteca de AnimeAV1.
 - Versión de la aplicación en el footer obtenida desde `BuildConfig.VERSION_NAME`.
 
-[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.2.0...HEAD
-[2.2.0]: https://github.com/dart998/animeav1-android/releases/tag/v2.2.0
+[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.2.0-rc.1...HEAD
+[2.2.0-rc.1]: https://github.com/dart998/animeav1-android/releases/tag/v2.2.0-rc.1
 [2.1.2]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.2
 [2.1.1]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.1
 [2.1.0]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.0
