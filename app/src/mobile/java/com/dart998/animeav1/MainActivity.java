@@ -222,6 +222,14 @@ public final class MainActivity extends Activity implements DownloadsView.Action
                 }
             }
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame()&&!isOnline())showOffline();}
+            @SuppressWarnings("deprecation")
+            @Override public boolean shouldOverrideUrlLoading(WebView view,String url){
+                // Android 6 uses this callback. The native dialog still requires confirmation.
+                if((AnimeAv1Client.ORIGIN+"/__android/logout").equals(url)){
+                    if(isAccountUrl(view.getUrl()))confirmLogout();return true;
+                }
+                return super.shouldOverrideUrlLoading(view,url);
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri uri=request.getUrl();
                 if(uri.toString().equals(AnimeAv1Client.ORIGIN+"/__android/logout")){
                     if(request.isForMainFrame()&&request.hasGesture()&&isAccountUrl(view.getUrl()))confirmLogout();return true;
