@@ -90,9 +90,8 @@ final class MegaClient {
         for (int i = 0; i < 16; i++) aes[i] = (byte) (raw[i] ^ raw[i + 16]);
         System.arraycopy(raw, 16, iv, 0, 8);
         JSONObject info = request(link.handle, control);
-        String downloadUrl = info.optString("g");
+        String downloadUrl = requireHttpsDownloadUrl(info.optString("g"));
         long total = info.optLong("s");
-        if (downloadUrl.isEmpty()) throw new IllegalStateException("Mega no devolvió el archivo");
         File parent = destination.getParentFile();
         if (parent == null || (!parent.exists() && !parent.mkdirs())) throw new IllegalStateException("No se pudo crear la carpeta local");
         File part = new File(destination.getAbsolutePath() + ".part");
@@ -101,21 +100,24 @@ final class MegaClient {
         HttpURLConnection c = (HttpURLConnection) new URL(downloadUrl).openConnection();
         control.connection(c); c.setConnectTimeout(25_000); c.setReadTimeout(45_000); c.setInstanceFollowRedirects(true);
         c.setRequestProperty("User-Agent", "AnimeAV1-Android/" + BuildConfig.VERSION_NAME);
-        int code = c.getResponseCode();
-        if (code < 200 || code >= 300) throw new IllegalStateException("Mega respondió HTTP " + code);
-        if (total <= 0) total = c.getContentLengthLong();
-        Cipher cipher = Cipher.getInstance("AES/CTR/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(aes, "AES"), new IvParameterSpec(iv));
-        long done = 0, lastUpdate = 0;
-        byte[] buffer = new byte[128 * 1024];
-        try (InputStream input = new CipherInputStream(new BufferedInputStream(c.getInputStream()), cipher);
-             BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(part))) {
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                if (control.cancelled()) throw new Cancelled();
-                output.write(buffer, 0, count); done += count;
-                long now = System.currentTimeMillis();
-                if (now - lastUpdate > 650) { lastUpdate = now; control.progress(done, total); }
+        long done = 0;
+        try {
+            int code = c.getResponseCode();
+            if (code < 200 || code >= 300) throw new IllegalStateException("Mega respondió HTTP " + code);
+            if (total <= 0) total = c.getContentLengthLong();
+            Cipher cipher = Cipher.getInstance("AES/CTR/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(aes, "AES"), new IvParameterSpec(iv));
+            long lastUpdate = 0;
+            byte[] buffer = new byte[128 * 1024];
+            try (InputStream input = new CipherInputStream(new BufferedInputStream(c.getInputStream()), cipher);
+                 BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(part))) {
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (control.cancelled()) throw new Cancelled();
+                    output.write(buffer, 0, count); done += count;
+                    long now = System.currentTimeMillis();
+                    if (now - lastUpdate > 650) { lastUpdate = now; control.progress(done, total); }
+                }
             }
         } finally { c.disconnect(); control.connection(null); }
         if (total > 0 && done != total) { part.delete(); throw new IllegalStateException("Descarga incompleta"); }
@@ -124,18 +126,28 @@ final class MegaClient {
         control.progress(done, total > 0 ? total : done);
     }
 
+    static String requireHttpsDownloadUrl(String value) throws Exception {
+        if (value == null || value.isEmpty()) throw new IllegalStateException("Mega no devolvió el archivo");
+        URI uri = new URI(value);
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null)
+            throw new IllegalStateException("Mega no devolvió un enlace HTTPS seguro. Reintenta la descarga.");
+        return value; // Preserve the signed path and query exactly as returned by MEGA.
+    }
+
     private static JSONObject request(String handle, Control control) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL("https://g.api.mega.co.nz/cs?id=" + System.nanoTime()).openConnection();
         control.connection(c); c.setDoOutput(true); c.setRequestMethod("POST"); c.setConnectTimeout(20_000); c.setReadTimeout(25_000);
         c.setRequestProperty("Content-Type", "application/json");
-        byte[] body = ("[{\"a\":\"g\",\"g\":1,\"p\":\"" + handle + "\"}]").getBytes(StandardCharsets.UTF_8);
+        // MEGA's CommandGetFile uses ssl=2 to request HTTPS transfer URLs.
+        byte[] body = ("[{\"a\":\"g\",\"g\":1,\"ssl\":2,\"p\":\"" + handle + "\"}]").getBytes(StandardCharsets.UTF_8);
         c.setFixedLengthStreamingMode(body.length);
-        try (BufferedOutputStream out = new BufferedOutputStream(c.getOutputStream())) { out.write(body); }
-        int code = c.getResponseCode();
-        if (code < 200 || code >= 300) throw new IllegalStateException("Mega API respondió HTTP " + code);
         String json;
-        try (InputStream in = c.getInputStream()) { json = read(in, 2 * 1024 * 1024); }
-        finally { c.disconnect(); control.connection(null); }
+        try {
+            try (BufferedOutputStream out = new BufferedOutputStream(c.getOutputStream())) { out.write(body); }
+            int code = c.getResponseCode();
+            if (code < 200 || code >= 300) throw new IllegalStateException("Mega API respondió HTTP " + code);
+            try (InputStream in = c.getInputStream()) { json = read(in, 2 * 1024 * 1024); }
+        } finally { c.disconnect(); control.connection(null); }
         JSONArray array = new JSONArray(json);
         if (array.length() == 0 || !(array.get(0) instanceof JSONObject)) throw new IllegalStateException("Respuesta Mega no válida");
         JSONObject result = array.getJSONObject(0);

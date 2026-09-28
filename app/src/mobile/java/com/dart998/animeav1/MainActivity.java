@@ -31,6 +31,7 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
+import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
@@ -41,6 +42,12 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -73,6 +80,10 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private WebChromeClient.CustomViewCallback customCallback;
     private long lastLibrarySync;
     private boolean watchingListRequested;
+    private String mobileUiScript;
+    private boolean accountRequested, accountHomeFallback, loggingOut, clearHistoryOnHome;
+    private int accountAttempts, accountRequestId, accountAttemptToken, pageGeneration, sessionGeneration;
+    private boolean pageLoading, logoutCleanupStarted;
 
     private final BroadcastReceiver updates=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){refreshDownloads();updatePageIntegration();}};
 
@@ -171,7 +182,14 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     }
 
     @SuppressLint("SetJavaScriptEnabled") private void setupWebView(){
+        try(InputStream in=getAssets().open("mobile-ui.js");ByteArrayOutputStream out=new ByteArrayOutputStream()){
+            byte[] buffer=new byte[4096];int count;while((count=in.read(buffer))!=-1)out.write(buffer,0,count);
+            mobileUiScript=new String(out.toByteArray(),StandardCharsets.UTF_8);
+        }catch(java.io.IOException e){throw new IllegalStateException("Falta la integración móvil",e);}
         WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setDatabaseEnabled(true);s.setMediaPlaybackRequiresUserGesture(false);s.setJavaScriptCanOpenWindowsAutomatically(false);s.setSupportMultipleWindows(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setUserAgentString(s.getUserAgentString()+" AnimeAV1Android/"+BuildConfig.VERSION_NAME);
+        if(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+            WebViewCompat.addDocumentStartJavaScript(web,mobileUiScript,Collections.singleton(AnimeAv1Client.ORIGIN));
+        web.setAlpha(0f);
         CookieManager cookies=CookieManager.getInstance();cookies.setAcceptCookie(true);cookies.setAcceptThirdPartyCookies(web,true);web.addJavascriptInterface(new Bridge(),"AnimeAV1Android");
         web.setDownloadListener((url,userAgent,contentDisposition,mimeType,length)->{Episode episode=parseEpisode(web.getUrl());if(episode!=null)enqueue(episode.slug,episode.number,web.getTitle(),web.getUrl(),url,"single","");});
         web.setWebChromeClient(new WebChromeClient(){
@@ -181,21 +199,96 @@ public final class MainActivity extends Activity implements DownloadsView.Action
             @Override public boolean onCreateWindow(WebView view,boolean dialog,boolean gesture,android.os.Message result){return false;}
         });
         web.setWebViewClient(new WebViewClient(){
-            @Override public void onPageStarted(WebView view,String url,Bitmap icon){if(AdBlocker.shouldBlock(Uri.parse(url))){view.stopLoading();if(view.canGoBack())view.goBack();else view.loadUrl(URLS[0]);return;}progress.setVisibility(View.VISIBLE);showWeb();markForUrl(url);}
+            @Override public void onPageStarted(WebView view,String url,Bitmap icon){pageGeneration++;pageLoading=true;view.setAlpha(0f);if(AdBlocker.shouldBlock(Uri.parse(url))){view.stopLoading();if(view.canGoBack())view.goBack();else view.loadUrl(URLS[0]);return;}progress.setVisibility(View.VISIBLE);showWeb();markForUrl(url);}
+            @Override public void onPageCommitVisible(WebView view,String url){if(!loggingOut)revealIntegratedPage(url);}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){return AdBlocker.shouldBlock(request.getUrl())?AdBlocker.emptyResponse():super.shouldInterceptRequest(view,request);}
-            @Override public void onPageFinished(WebView view,String url){CookieManager.getInstance().flush();view.evaluateJavascript(AdBlocker.cleanupScript(),null);inject();if(watchingListRequested&&url!=null&&url.contains("/cuenta/listas"))openWatchingList();syncLibrary(false);}
+            @Override public void onPageFinished(WebView view,String url){
+                if(loggingOut){if("about:blank".equals(url))finishLogout();return;}
+                if(url==null||!url.equals(view.getUrl()))return;
+                pageLoading=false;
+                if(accountRequested&&accountHomeFallback&&isAccountUrl(url))return;
+                CookieManager.getInstance().flush();view.evaluateJavascript(AdBlocker.cleanupScript(),null);inject();revealIntegratedPage(url);
+                if(clearHistoryOnHome&&URLS[0].equals(url)){view.clearHistory();clearHistoryOnHome=false;}
+                if(watchingListRequested&&url.contains("/cuenta/listas"))openWatchingList();
+                if(accountRequested)tryOpenAccount(accountRequestId);
+                syncLibrary(false);
+            }
+            @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){
+                if(!loggingOut&&request.isForMainFrame()&&response.getStatusCode()==401&&isAccountUrl(request.getUrl().toString())&&request.getUrl().toString().equals(view.getUrl())){
+                    view.setAlpha(0f);watchingListRequested=false;
+                    accountRequested=true;accountHomeFallback=true;accountAttempts=0;accountRequestId++;
+                    final int requestId=accountRequestId;
+                    view.post(()->{if(accountRequested&&requestId==accountRequestId&&!isDestroyed())loadPage(URLS[0]);});
+                }
+            }
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame()&&!isOnline())showOffline();}
-            @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri uri=request.getUrl();if(AdBlocker.shouldBlock(uri))return true;if(isDiscord(uri)){try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}String scheme=uri.getScheme();if("http".equalsIgnoreCase(scheme)||"https".equalsIgnoreCase(scheme))return false;try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}
+            @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri uri=request.getUrl();
+                if(uri.toString().equals(AnimeAv1Client.ORIGIN+"/__android/logout")){
+                    if(request.isForMainFrame()&&request.hasGesture()&&isAccountUrl(view.getUrl()))confirmLogout();return true;
+                }
+                if(loggingOut)return true;
+                if(AdBlocker.shouldBlock(uri))return true;if(isDiscord(uri)){try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}String scheme=uri.getScheme();if("http".equalsIgnoreCase(scheme)||"https".equalsIgnoreCase(scheme))return false;try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception ignored){}return true;}
         });
     }
 
     private static boolean isDiscord(Uri uri){String host=uri==null?null:uri.getHost();if(host==null)return false;host=host.toLowerCase(java.util.Locale.US);return host.equals("discord.gg")||host.equals("discord.com")||host.endsWith(".discord.com")||host.equals("discordapp.com")||host.endsWith(".discordapp.com");}
 
     private void select(int index){
+        if(loggingOut)return;
+        accountRequested=false;accountRequestId++;watchingListRequested=false;
         if(index==1){showDownloads();return;}
         if(!isOnline()){showOffline();Toast.makeText(this,"Esta sección necesita conexión",Toast.LENGTH_SHORT).show();return;}
+        if(index==4){selected=4;markSelected(4);showWeb();accountRequested=true;accountAttempts=0;accountHomeFallback=false;tryOpenAccount(accountRequestId);return;}
         if(index==3)watchingListRequested=true;
-        selected=index;markSelected(index);showWeb();String target=URLS[index];if(!target.equals(web.getUrl()))web.loadUrl(target);else if(index==3)openWatchingList();
+        selected=index;markSelected(index);showWeb();String target=URLS[index];if(index==0||!target.equals(web.getUrl()))loadPage(target);else if(index==3)openWatchingList();
+    }
+    private static boolean isSiteUrl(String url){if(url==null)return false;Uri u=Uri.parse(url);return "https".equals(u.getScheme())&&"animeav1.com".equals(u.getHost())&&(u.getPort()==-1||u.getPort()==443);}
+    private static boolean isAccountUrl(String url){if(!isSiteUrl(url))return false;String path=Uri.parse(url).getPath();return "/cuenta".equals(path)||path!=null&&path.startsWith("/cuenta/");}
+    private void loadPage(String url){pageGeneration++;pageLoading=true;web.setAlpha(0f);web.loadUrl(url);}
+    private void revealIntegratedPage(String url){
+        if(url==null||!url.equals(web.getUrl())||accountRequested&&accountHomeFallback&&isAccountUrl(url))return;
+        final int generation=pageGeneration;
+        web.evaluateJavascript(isSiteUrl(url)?mobileUiScript:"void 0",ignored->{
+            if(isDestroyed()||loggingOut||generation!=pageGeneration||!url.equals(web.getUrl()))return;
+            web.postVisualStateCallback(generation,new WebView.VisualStateCallback(){@Override public void onComplete(long id){
+                if(!isDestroyed()&&!loggingOut&&generation==pageGeneration&&url.equals(web.getUrl()))web.setAlpha(1f);
+            }});
+        });
+    }
+    private void tryOpenAccount(int requestId){
+        if(isDestroyed()||loggingOut||!accountRequested||requestId!=accountRequestId||pageLoading)return;
+        if(!isSiteUrl(web.getUrl())){accountHomeFallback=true;loadPage(URLS[0]);return;}
+        final int generation=pageGeneration;
+        final int attemptToken=++accountAttemptToken;
+        web.evaluateJavascript(mobileUiScript+";window.__av1MobileUi.openAccount();",result->{
+            if(isDestroyed()||!accountRequested||requestId!=accountRequestId||attemptToken!=accountAttemptToken||generation!=pageGeneration)return;
+            if("\"authenticated\"".equals(result)){accountRequested=false;selected=4;markSelected(4);if(!URLS[4].equals(web.getUrl()))loadPage(URLS[4]);return;}
+            if("\"login-open\"".equals(result)){accountRequested=false;selected=4;markSelected(4);return;}
+            if(accountAttempts++<24){web.postDelayed(()->{if(attemptToken==accountAttemptToken)tryOpenAccount(requestId);},250);return;}
+            if(!accountHomeFallback){accountHomeFallback=true;accountAttempts=0;loadPage(URLS[0]);return;}
+            accountRequested=false;Toast.makeText(this,"No se pudo abrir el acceso. Vuelve a pulsar Mi cuenta.",Toast.LENGTH_LONG).show();
+        });
+    }
+    private void confirmLogout(){
+        if(loggingOut)return;
+        new AlertDialog.Builder(this).setTitle("Cerrar sesión").setMessage("Se cerrará la sesión en esta app y se borrarán sus cookies de navegación. Tus descargas y archivos se conservarán.")
+            .setNegativeButton("Cancelar",null).setPositiveButton("Cerrar sesión",(dialog,which)->{
+                if(!isAccountUrl(web.getUrl()))return;
+                sessionGeneration++;
+                loggingOut=true;logoutCleanupStarted=false;accountRequested=false;accountRequestId++;watchingListRequested=false;
+                web.stopLoading();web.setAlpha(0f);
+                web.evaluateJavascript("(function(){try{localStorage.clear();sessionStorage.clear();}catch(_){}})();",ignored->{if(!isDestroyed())web.loadUrl("about:blank");});
+            }).show();
+    }
+    private void finishLogout(){
+        if(logoutCleanupStarted)return;
+        logoutCleanupStarted=true;
+        WebStorage.getInstance().deleteOrigin(AnimeAv1Client.ORIGIN);
+        CookieManager.getInstance().removeAllCookies(removed->{
+            if(isDestroyed())return;
+            CookieManager.getInstance().flush();web.clearHistory();web.clearCache(true);lastLibrarySync=0;
+            loggingOut=false;clearHistoryOnHome=true;selected=0;markSelected(0);loadPage(URLS[0]);
+        });
     }
     private void openWatchingList(){watchingListRequested=false;web.evaluateJavascript(SiteScripts.openWatchingList(),null);}
     private void showWeb(){offlineLanding=false;nativeContent.setVisibility(View.GONE);web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);}
@@ -204,7 +297,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private void markSelected(int index){for(int i=0;i<navLabels.length;i++){int color=i==index?AppUi.BRAND:AppUi.MUTED;navLabels[i].setTextColor(color);navIcons[i].setColorFilter(color);}}
     private void markForUrl(String url){if(url==null)return;if(url.equals(URLS[0])){selected=0;markSelected(0);}else if(url.contains("/horario")){selected=2;markSelected(2);}else if(url.contains("/cuenta/listas")){selected=3;markSelected(3);}else if(url.matches("https://animeav1\\.com/cuenta/?(?:\\?.*)?")){selected=4;markSelected(4);}}
 
-    private void inject(){Episode e=parseEpisode(web.getUrl());DownloadEntry local=e==null?null:store.get(e.slug,e.number);web.evaluateJavascript(SiteScripts.install(local!=null&&local.isPlayable()?DownloadEntry.COMPLETED:""),null);}
+    private void inject(){if(loggingOut||!isSiteUrl(web.getUrl()))return;Episode e=parseEpisode(web.getUrl());DownloadEntry local=e==null?null:store.get(e.slug,e.number);web.evaluateJavascript(SiteScripts.install(local!=null&&local.isPlayable()?DownloadEntry.COMPLETED:""),null);}
     private void updatePageIntegration(){if(web.getVisibility()==View.VISIBLE)inject();}
 
     private void enqueue(String slug,int episode,String title,String page,String source,String origin,String batchId){
@@ -230,7 +323,18 @@ public final class MainActivity extends Activity implements DownloadsView.Action
 
     private void downloadUnwatched(String slug,String title,int published){if(!isOnline()){Toast.makeText(this,"Necesitas conexión",Toast.LENGTH_SHORT).show();return;}String cookie=CookieManager.getInstance().getCookie(AnimeAv1Client.ORIGIN);background.execute(()->{try{int last=0;String resolvedTitle=title;for(AnimeAv1Client.LibraryItem i:AnimeAv1Client.library(cookie))if(i.slug.equals(slug)){last=i.watched;if(resolvedTitle==null||resolvedTitle.isEmpty())resolvedTitle=i.title;break;}int real=published>0?published:AnimeAv1Client.publishedEpisodes(slug,cookie);ArrayList<Pending> result=new ArrayList<>();for(int ep=last+1;ep<=real;ep++){DownloadEntry old=store.get(slug,ep);if(old==null||(!old.isActive()&&!old.isPlayable()))result.add(new Pending(slug,resolvedTitle,ep));}runOnUiThread(()->confirmBatch(result,result.isEmpty()?0:1));}catch(Exception error){runOnUiThread(()->Toast.makeText(this,value(error.getMessage()),Toast.LENGTH_LONG).show());}});}
 
-    private void syncLibrary(boolean force){long now=System.currentTimeMillis();if(!isOnline()||(!force&&now-lastLibrarySync<5*60_000))return;lastLibrarySync=now;String cookie=CookieManager.getInstance().getCookie(AnimeAv1Client.ORIGIN);background.execute(()->{try{int removed=0;for(AnimeAv1Client.LibraryItem item:AnimeAv1Client.library(cookie))removed+=store.deleteWatched(item.slug,item.watched);if(removed>0)runOnUiThread(()->{refreshDownloads();updatePageIntegration();});}catch(Exception ignored){}});}
+    private void syncLibrary(boolean force){
+        long now=System.currentTimeMillis();if(loggingOut||!isOnline()||(!force&&now-lastLibrarySync<5*60_000))return;
+        lastLibrarySync=now;String cookie=CookieManager.getInstance().getCookie(AnimeAv1Client.ORIGIN);final int session=sessionGeneration;
+        if(cookie==null||cookie.isEmpty())return;
+        background.execute(()->{try{
+            List<AnimeAv1Client.LibraryItem> library=AnimeAv1Client.library(cookie);
+            runOnUiThread(()->{if(isDestroyed()||loggingOut||session!=sessionGeneration)return;
+                int removed=0;for(AnimeAv1Client.LibraryItem item:library)removed+=store.deleteWatched(item.slug,item.watched);
+                if(removed>0){refreshDownloads();updatePageIntegration();}
+            });
+        }catch(Exception ignored){}});
+    }
 
     private void observeNetwork(){connectivity=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);online=isOnline();networkCallback=new ConnectivityManager.NetworkCallback(){@Override public void onAvailable(Network network){refreshConnectivity();}@Override public void onCapabilitiesChanged(Network network,NetworkCapabilities capabilities){refreshConnectivity();}@Override public void onLost(Network network){refreshConnectivity();}};try{connectivity.registerDefaultNetworkCallback(networkCallback);}catch(Exception ignored){}}
     private void refreshConnectivity(){runOnUiThread(()->{boolean was=online;online=isOnline();if(!was&&online&&offlineLanding)select(0);});}
@@ -241,7 +345,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     @Override public void onConfigurationChanged(Configuration configuration){super.onConfigurationChanged(configuration);configureNavigation(configuration);if(customView!=null)hideAllSystemBars();else{root.requestApplyInsets();hideSystemNavigation();}}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus){if(customView!=null)hideAllSystemBars();else hideSystemNavigation();}}
     @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
-    @Override public void onBackPressed(){if(customView!=null){exitFullscreen();return;}if(selected==1){if(isOnline())select(0);else showOffline();return;}if(offlineLanding){super.onBackPressed();return;}if(web.canGoBack())web.goBack();else super.onBackPressed();}
+    @Override public void onBackPressed(){if(loggingOut)return;accountRequested=false;accountRequestId++;if(customView!=null){exitFullscreen();return;}if(selected==1){if(isOnline())select(0);else showOffline();return;}if(offlineLanding){super.onBackPressed();return;}if(web.canGoBack())web.goBack();else super.onBackPressed();}
     private void exitFullscreen(){if(customView==null)return;fullscreen.removeView(customView);fullscreen.setVisibility(View.GONE);customView=null;web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);restoreSystemBars();if(customCallback!=null)customCallback.onCustomViewHidden();customCallback=null;}
     @Override protected void onDestroy(){try{unregisterReceiver(updates);}catch(Exception ignored){}try{connectivity.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}background.shutdownNow();store.close();web.destroy();super.onDestroy();}
 

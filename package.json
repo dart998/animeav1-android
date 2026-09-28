@@ -1,0 +1,10 @@
+{
+  "name": "animeav1-mobile-integration-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/mobile-ui.test.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

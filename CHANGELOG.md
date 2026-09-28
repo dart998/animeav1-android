@@ -4,6 +4,25 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 
 ## [Sin publicar]
 
+## [2.2.0-rc.2] - 2026-09-28
+
+### Añadido
+
+- Botón propio `Cerrar sesión` en Mi cuenta, con confirmación. Borra la sesión y las cookies del WebView de esta app y conserva la biblioteca y los archivos descargados.
+
+### Corregido
+
+- Ocultación del menú web desde el inicio del documento y antes de mostrar cada página, para evitar su aparición fugaz al volver a Inicio.
+- Mi cuenta abre el formulario oficial de acceso para visitantes; una respuesta 401 recupera el inicio y abre el acceso en lugar de dejar la pantalla bloqueada.
+- Las descargas solicitan enlaces HTTPS a MEGA y verifican el protocolo antes de conectar. Se mantiene bloqueado el tráfico HTTP sin cifrar.
+- Se descartan resultados de sincronización de la sesión anterior al cerrar sesión.
+- La actualización del texto de versión deja de provocar mutaciones repetidas del footer.
+
+### Validación
+
+- Pruebas de integración DOM para navegación, acceso y botón de salida, y pruebas de validación de enlaces de descarga.
+- La confirmación de funcionamiento en dispositivos sigue siendo necesaria antes de promover a estable.
+
 ## [2.2.0-rc.1] - 2026-09-23
 
 ### Cambios
@@ -131,7 +150,8 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 - Limpieza de archivos locales al detectar episodios vistos en la biblioteca de AnimeAV1.
 - Versión de la aplicación en el footer obtenida desde `BuildConfig.VERSION_NAME`.
 
-[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.2.0-rc.1...HEAD
+[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.2.0-rc.2...HEAD
+[2.2.0-rc.2]: https://github.com/dart998/animeav1-android/releases/tag/v2.2.0-rc.2
 [2.2.0-rc.1]: https://github.com/dart998/animeav1-android/releases/tag/v2.2.0-rc.1
 [2.1.2]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.2
 [2.1.1]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.1

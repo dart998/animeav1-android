@@ -10,6 +10,8 @@ La aplicación se distribuye en dos APK independientes, ambos con versión coord
 
 - AnimeAV1 se ejecuta dentro de un WebView conservando su aspecto, navegación, sesión y cookies.
 - Menú permanente con Inicio, Descargas, Horario, Mis Listas y Mi cuenta.
+- Mi cuenta abre el acceso oficial para visitantes y recupera las respuestas 401.
+- Botón propio para cerrar la sesión de la app con confirmación, conservando las descargas locales.
 - Mis Listas abre por defecto la categoría `Viendo`.
 - Integración de enlaces, imágenes, ventanas emergentes y Discord dentro de una navegación coherente.
 - Versión visible bajo “By fans for fans”, obtenida automáticamente de `BuildConfig.VERSION_NAME`.
@@ -19,6 +21,7 @@ La aplicación se distribuye en dos APK independientes, ambos con versión coord
 - Captura del botón de descarga de los episodios y gestión nativa de Android.
 - Selección de fuentes en orden `SUB`, sin etiqueta y, solo como último recurso, `DUB`.
 - Resolución y descifrado local de enlaces públicos de Mega.
+- Transferencia desde MEGA mediante enlaces HTTPS, sin permitir HTTP sin cifrar.
 - Cola persistente y secuencial, sin episodios duplicados.
 - Estados pendiente, resolviendo, descargando, completado, cancelado y error.
 - Progreso, tamaño y acciones para ver, cancelar, retirar, borrar o reintentar.
