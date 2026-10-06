@@ -103,7 +103,7 @@ final class MegaClient {
         long done = 0;
         try {
             int code = c.getResponseCode();
-            if (code < 200 || code >= 300) throw new IllegalStateException("Mega respondió HTTP " + code);
+            if (code < 200 || code >= 300) throw new IllegalStateException(transferError(code));
             if (total <= 0) total = c.getContentLengthLong();
             Cipher cipher = Cipher.getInstance("AES/CTR/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(aes, "AES"), new IvParameterSpec(iv));
@@ -134,6 +134,11 @@ final class MegaClient {
         return value; // Preserve the signed path and query exactly as returned by MEGA.
     }
 
+    static String transferError(int code) {
+        if (code == 509) return "MEGA: cuota de descarga agotada. Espera y reintenta.";
+        return "Mega respondió HTTP " + code;
+    }
+
     private static JSONObject request(String handle, Control control) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL("https://g.api.mega.co.nz/cs?id=" + System.nanoTime()).openConnection();
         control.connection(c); c.setDoOutput(true); c.setRequestMethod("POST"); c.setConnectTimeout(20_000); c.setReadTimeout(25_000);
@@ -149,9 +154,15 @@ final class MegaClient {
             try (InputStream in = c.getInputStream()) { json = read(in, 2 * 1024 * 1024); }
         } finally { c.disconnect(); control.connection(null); }
         JSONArray array = new JSONArray(json);
+        if (array.length() == 1 && array.optInt(0, 0) == -17)
+            throw new IllegalStateException(transferError(509));
         if (array.length() == 0 || !(array.get(0) instanceof JSONObject)) throw new IllegalStateException("Respuesta Mega no válida");
         JSONObject result = array.getJSONObject(0);
-        if (result.has("e")) throw new IllegalStateException("Mega API error " + result.optInt("e"));
+        if (result.has("e")) {
+            int error = result.optInt("e");
+            if (error == -17) throw new IllegalStateException(transferError(509));
+            throw new IllegalStateException("Mega API error " + error);
+        }
         return result;
     }
 

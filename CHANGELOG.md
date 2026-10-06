@@ -4,6 +4,10 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 
 ## [Sin publicar]
 
+### Corregido
+
+- La pantalla de Descargas explica el límite de transferencia de MEGA cuando responde HTTP 509 o el código de cuota `-17`, en lugar de mostrar un error técnico sin contexto.
+
 ## [2.2.0-rc.2] - 2026-09-28
 
 ### Añadido
