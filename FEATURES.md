@@ -10,6 +10,7 @@ La aplicación se distribuye en dos APK independientes, ambos con versión coord
 
 - AnimeAV1 se ejecuta dentro de un WebView conservando su aspecto, navegación, sesión y cookies.
 - Menú permanente con Inicio, Descargas, Horario, Mis Listas y Mi cuenta.
+- El botón Atrás vuelve a la página web anterior y desde Descargas recupera la vista previa.
 - Mi cuenta abre el acceso oficial para visitantes y recupera las respuestas 401.
 - Botón propio para cerrar la sesión de la app con confirmación, conservando las descargas locales.
 - Mis Listas abre por defecto la categoría `Viendo`.

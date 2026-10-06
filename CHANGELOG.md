@@ -4,6 +4,8 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 
 ## [Sin publicar]
 
+## [2.2.0-rc.3] - 2026-10-06
+
 ### Corregido
 
 - La pantalla de Descargas explica el límite de transferencia de MEGA cuando responde HTTP 509 o el código de cuota `-17`, en lugar de mostrar un error técnico sin contexto.
@@ -155,7 +157,8 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 - Limpieza de archivos locales al detectar episodios vistos en la biblioteca de AnimeAV1.
 - Versión de la aplicación en el footer obtenida desde `BuildConfig.VERSION_NAME`.
 
-[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.2.0-rc.2...HEAD
+[Sin publicar]: https://github.com/dart998/animeav1-android/compare/v2.2.0-rc.3...HEAD
+[2.2.0-rc.3]: https://github.com/dart998/animeav1-android/releases/tag/v2.2.0-rc.3
 [2.2.0-rc.2]: https://github.com/dart998/animeav1-android/releases/tag/v2.2.0-rc.2
 [2.2.0-rc.1]: https://github.com/dart998/animeav1-android/releases/tag/v2.2.0-rc.1
 [2.1.2]: https://github.com/dart998/animeav1-android/releases/tag/v2.1.2
