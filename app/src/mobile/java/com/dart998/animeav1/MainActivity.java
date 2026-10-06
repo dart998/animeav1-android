@@ -23,6 +23,8 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.JavascriptInterface;
@@ -75,7 +77,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private ConnectivityManager.NetworkCallback networkCallback;
     private boolean online;
     private boolean offlineLanding;
-    private int selected=0;
+    private int selected=0, previousWebSelected=0;
     private View customView;
     private WebChromeClient.CustomViewCallback customCallback;
     private long lastLibrarySync;
@@ -84,6 +86,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private boolean accountRequested, accountHomeFallback, loggingOut, clearHistoryOnHome;
     private int accountAttempts, accountRequestId, accountAttemptToken, pageGeneration, sessionGeneration;
     private boolean pageLoading, logoutCleanupStarted;
+    private OnBackInvokedCallback systemBackCallback;
 
     private final BroadcastReceiver updates=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){refreshDownloads();updatePageIntegration();}};
 
@@ -93,6 +96,10 @@ public final class MainActivity extends Activity implements DownloadsView.Action
         root=findViewById(R.id.root);content=findViewById(R.id.content);web=findViewById(R.id.web_view);nativeContent=findViewById(R.id.native_content);progress=findViewById(R.id.page_progress);fullscreen=findViewById(R.id.fullscreen_video);navigation=findViewById(R.id.bottom_navigation);
         configureNavigation(getResources().getConfiguration());applySystemBarInsets();hideSystemNavigation();
         store=new DownloadStore(this);store.recoverInterrupted();setupNavigation();setupWebView();registerUpdates();observeNetwork();
+        if(Build.VERSION.SDK_INT>=33){
+            systemBackCallback=this::handleBack;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT,systemBackCallback);
+        }
         String requested=getIntent().getStringExtra(EXTRA_URL);
         if(state!=null)web.restoreState(state);else if(isOnline())web.loadUrl(requested==null?URLS[0]:requested);else showOffline();
         if(!store.queued().isEmpty())DownloadService.wake(this);
@@ -300,7 +307,7 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     }
     private void openWatchingList(){watchingListRequested=false;web.evaluateJavascript(SiteScripts.openWatchingList(),null);}
     private void showWeb(){offlineLanding=false;nativeContent.setVisibility(View.GONE);web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);}
-    private void showDownloads(){selected=1;markSelected(1);offlineLanding=false;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();downloadsView=new DownloadsView(this,this);nativeContent.addView(downloadsView,new FrameLayout.LayoutParams(-1,-1));refreshDownloads();}
+    private void showDownloads(){if(selected!=1)previousWebSelected=selected;selected=1;markSelected(1);offlineLanding=false;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();downloadsView=new DownloadsView(this,this);nativeContent.addView(downloadsView,new FrameLayout.LayoutParams(-1,-1));refreshDownloads();}
     private void showOffline(){selected=0;markSelected(0);offlineLanding=true;web.setVisibility(View.GONE);nativeContent.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);nativeContent.removeAllViews();nativeContent.addView(new OfflineLandingView(this,this::showDownloads,()->{if(isOnline()){offlineLanding=false;select(0);}else Toast.makeText(this,"Sigue sin haber conexión",Toast.LENGTH_SHORT).show();}),new FrameLayout.LayoutParams(-1,-1));}
     private void markSelected(int index){for(int i=0;i<navLabels.length;i++){int color=i==index?AppUi.BRAND:AppUi.MUTED;navLabels[i].setTextColor(color);navIcons[i].setColorFilter(color);}}
     private void markForUrl(String url){if(url==null)return;if(url.equals(URLS[0])){selected=0;markSelected(0);}else if(url.contains("/horario")){selected=2;markSelected(2);}else if(url.contains("/cuenta/listas")){selected=3;markSelected(3);}else if(url.matches("https://animeav1\\.com/cuenta/?(?:\\?.*)?")){selected=4;markSelected(4);}}
@@ -349,13 +356,26 @@ public final class MainActivity extends Activity implements DownloadsView.Action
     private boolean isOnline(){ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network n=cm.getActiveNetwork();NetworkCapabilities c=n==null?null:cm.getNetworkCapabilities(n);return c!=null&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);}
     private void registerUpdates(){IntentFilter f=new IntentFilter(DownloadService.ACTION_UPDATED);if(Build.VERSION.SDK_INT>=33)registerReceiver(updates,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,f);}
 
-    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String url=intent.getStringExtra(EXTRA_URL);if(url!=null){if(isOnline()){showWeb();web.loadUrl(url);}else showDownloads();}}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String url=intent.getStringExtra(EXTRA_URL);if(url!=null){if(isOnline()){selected=0;markSelected(0);showWeb();loadPage(url);}else showDownloads();}}
     @Override public void onConfigurationChanged(Configuration configuration){super.onConfigurationChanged(configuration);configureNavigation(configuration);if(customView!=null)hideAllSystemBars();else{root.requestApplyInsets();hideSystemNavigation();}}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus){if(customView!=null)hideAllSystemBars();else hideSystemNavigation();}}
     @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
-    @Override public void onBackPressed(){if(loggingOut)return;accountRequested=false;accountRequestId++;if(customView!=null){exitFullscreen();return;}if(selected==1){if(isOnline())select(0);else showOffline();return;}if(offlineLanding){super.onBackPressed();return;}if(web.canGoBack())web.goBack();else super.onBackPressed();}
+    @Override public void onBackPressed(){handleBack();}
+    private void handleBack(){
+        if(loggingOut)return;
+        accountRequested=false;accountRequestId++;watchingListRequested=false;
+        if(customView!=null){exitFullscreen();return;}
+        if(selected==1&&nativeContent.getVisibility()==View.VISIBLE){
+            if(!isOnline()||web.getUrl()==null){showOffline();return;}
+            selected=previousWebSelected;markSelected(selected);showWeb();return;
+        }
+        if(offlineLanding){finish();return;}
+        if(web.canGoBack()){web.goBack();return;}
+        if(selected!=0||isSiteUrl(web.getUrl())&&!URLS[0].equals(web.getUrl())){select(0);return;}
+        finish();
+    }
     private void exitFullscreen(){if(customView==null)return;fullscreen.removeView(customView);fullscreen.setVisibility(View.GONE);customView=null;web.setVisibility(View.VISIBLE);navigation.setVisibility(View.VISIBLE);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);restoreSystemBars();if(customCallback!=null)customCallback.onCustomViewHidden();customCallback=null;}
-    @Override protected void onDestroy(){try{unregisterReceiver(updates);}catch(Exception ignored){}try{connectivity.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}background.shutdownNow();store.close();web.destroy();super.onDestroy();}
+    @Override protected void onDestroy(){if(Build.VERSION.SDK_INT>=33&&systemBackCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(systemBackCallback);try{unregisterReceiver(updates);}catch(Exception ignored){}try{connectivity.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}background.shutdownNow();store.close();web.destroy();super.onDestroy();}
 
     private static Episode parseEpisode(String url){if(url==null)return null;try{List<String> p=Uri.parse(url).getPathSegments();if(p.size()==3&&p.get(0).equals("media"))return new Episode(p.get(1),Integer.parseInt(p.get(2)));}catch(Exception ignored){}return null;}
     private static String cleanTitle(String title,String fallback){String value=title==null?"":title.trim();value=value.replaceAll("(?i)\\s*[-|·]\\s*AnimeAV1.*$","");return value.isEmpty()?fallback:value;}

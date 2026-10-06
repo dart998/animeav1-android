@@ -7,6 +7,7 @@ Este archivo recoge los cambios visibles de cada versión de AnimeAV1 Android.
 ### Corregido
 
 - La pantalla de Descargas explica el límite de transferencia de MEGA cuando responde HTTP 509 o el código de cuota `-17`, en lugar de mostrar un error técnico sin contexto.
+- El botón Atrás de Android 13–16 recorre el historial web y, desde Descargas, vuelve a la vista anterior antes de salir de la aplicación.
 
 ## [2.2.0-rc.2] - 2026-09-28
 
